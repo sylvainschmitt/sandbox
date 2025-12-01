@@ -1,0 +1,153 @@
+---
+title: "CR allometry"
+author: "Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+```{r set}
+library(tidyverse)
+library(cmdstanr)
+options(knitr.kable.NA = "")
+```
+
+## Previous allometry
+
+```{r}
+ft <- read.csv("data/TROLL_data_predicted_CR.csv")
+ft %>% 
+  mutate(dbh = list(seq(1, 5, 1)/100)) %>% 
+  unnest(dbh) %>% 
+  mutate(cr = exp(s_CR_a+s_CR_b*log(dbh))) %>% 
+  ggplot(aes(dbh, cr, group = s_name)) +
+  geom_line(col = "lightgrey") +
+  geom_line(data = data.frame(dbh = seq(1, 5, 1)/100, s_name = "default") %>% 
+              mutate(cr = exp(2.15+0.75*log(dbh))), col = "red") +
+  geom_line(data = data.frame(dbh = seq(1, 5, 1)/100, s_name = "Lophra") %>% 
+              mutate(cr = exp(2.338109+0.5025856*log(dbh))), col = "blue") +
+  theme_bw()
+```
+
+```{r}
+ft %>% 
+  ggplot(aes(s_CR_a, s_CR_b)) +
+  geom_point() +
+  geom_point(x = 2.15, y = 0.75, col = "red", size = 2) +
+  geom_point(x = 2.338109, y = 0.5025856, col = "blue", size = 2) +
+  theme_bw()
+```
+
+
+## New fit
+
+We use the following formula:
+
+$$
+log(CR) \sim \mathcal N (a_s + b_s \times log(DBH), \sigma)~|~(a_s,b_s)\sim \mathcal N ((\mu_a,\mu_b),(\sigma_a,\sigma_b))
+$$
+
+We want to constrain the intercept with a maximal crown radius CR at recruitment where DHB=1cm=0.01m. To do that I will use DBH in cm instead of m in the model to get the intercept as the value at tree recruitment in the model to more easily constrain it.
+
+$$
+\begin{aligned}
+log(CR) = a_s' + b_s' \times log(DBH\times100) \\
+log(CR) = a_s' + b_s' \times log(100) + b_s' \times log(DBH) \\
+log(CR) = a_s + b_s \times log(DBH)~|~b_s=b_s',~a_s=a_s' + b_s \times log(100)
+\end{aligned}
+$$
+
+You can simply implement it in the model and thus directly constrain $a_s'$ or `a_p` with the maximum CR at recruitment DBH=1cm (note that I made cr_omax as a model input to easily change it from outside the model):
+
+```{r}
+model <- cmdstan_model("models/cr_allometry.stan")
+model$print()
+```
+
+```{r}
+data <- read_csv("data/CR-DBH_23Apr2025.csv") %>% 
+  mutate(speciesnum = as.numeric(as.factor(standardized_name)))
+data %>% 
+  ggplot(aes(dbh, CR, col = standardized_name)) +
+  geom_point() +
+  theme_bw() +
+  scale_x_log10() +
+  scale_y_log10() +
+  scale_color_discrete(guide = "none") +
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+```{r}
+mdata <- list(
+  n_obs = nrow(data),
+  n_sp = max(data$speciesnum),
+  dbh = data$dbh,
+  cr = data$CR,
+  species = data$speciesnum,
+  cr_omax = 1
+)
+```
+
+```{r}
+#| eval: false
+fit <- model$sample(mdata, 
+                    chains = 4, 
+                    parallel_chains = 4, 
+                    cores = 4,
+                    output_dir = "chains/cr")
+```
+
+```{r}
+fit <- as_cmdstan_fit(list.files("chains/cr/", full.names = TRUE))
+fit$summary(c("mu_ap", "mu_b", "sigma_ap", "sigma_b", "sigma"))
+```
+
+```{r}
+pars <- fit$summary(c("a", "b"), "median") %>% 
+  separate(variable, c("parameter", "speciesnum"), convert = TRUE) %>% 
+  left_join(select(data, speciesnum, standardized_name) %>% unique()) %>% 
+  select(-speciesnum) %>% 
+  pivot_wider(names_from = parameter, values_from = median)
+```
+
+```{r}
+pars %>% 
+  ggplot(aes(a, b)) +
+  geom_point() +
+  theme_bw()
+```
+
+```{r}
+pars %>% 
+  mutate(dbh = list(seq(1, 5, 1)/100)) %>% 
+  unnest(dbh) %>% 
+  mutate(cr = exp(a+b*log(dbh))) %>% 
+  ggplot(aes(dbh, cr, group = standardized_name)) +
+  geom_line(col = "lightgrey") +
+  geom_line(data = data.frame(dbh = seq(1, 5, 1)/100, standardized_name = "default") %>% 
+              mutate(cr = exp(2.15+0.75*log(dbh))), col = "red") +
+  geom_line(data = data.frame(dbh = seq(1, 5, 1)/100, standardized_name = "Lophra") %>% 
+              mutate(cr = exp(2.338109+0.5025856*log(dbh))), col = "blue") +
+  theme_bw() +
+  geom_hline(yintercept = 1, linetype = "dashed")
+```
+
+```{r}
+pars %>% 
+  mutate(dbh = list(seq(1, 100, 1)/100)) %>% 
+  unnest(dbh) %>% 
+  mutate(cr = exp(a+b*log(dbh))) %>% 
+  ggplot(aes(dbh, cr, group = standardized_name)) +
+  geom_line(col = "lightgrey") +
+  geom_line(data = data.frame(dbh = seq(1, 100, 1)/100, standardized_name = "default") %>% 
+              mutate(cr = exp(2.15+0.75*log(dbh))), col = "red") +
+  geom_line(data = data.frame(dbh = seq(1, 100, 1)/100, standardized_name = "Lophra") %>% 
+              mutate(cr = exp(2.338109+0.5025856*log(dbh))), col = "blue") +
+  theme_bw() +
+  geom_hline(yintercept = 1, linetype = "dashed")
+```
+
+```{r}
+write_tsv(pars, "data/pars.tsv")
+```

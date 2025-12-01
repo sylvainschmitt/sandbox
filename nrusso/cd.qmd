@@ -1,0 +1,153 @@
+---
+title: "Crown Depth Allometry"
+author: "Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+```{r set}
+#| include: false
+library(tidyverse)
+library(brms)
+library(tidybayes)
+library(bayesplot)
+options(knitr.kable.NA = "")
+```
+
+## Data
+
+```{r data}
+#| message: false
+#| warning: false
+data <- read_csv("data/CD-Height_08Apr2025.csv") %>% 
+  left_join(read_csv("data/CD_total_per_species.csv")) %>% 
+  select(-`...1`)
+```
+
+```{r h_cd}
+#| message: false
+data %>% 
+  ggplot(aes(TotalHeight_m, CD)) +
+  geom_point(aes(col = standardized_name)) +
+  theme_bw() +
+  geom_smooth(method = "lm") +
+  scale_color_discrete(guide = "none") +
+  xlab("Height [ m ]") +
+  ylab("Crown Depth [ m ]")
+```
+
+A linear relationship seems good:
+
+$$
+CD \sim \mathcal N (a + b \times h, \sigma)
+$$
+
+```{r n}
+#| message: false
+data %>% 
+  ggplot(aes(n_individual_cd)) +
+  geom_histogram() +
+  theme_bw() +
+  scale_x_log10() +
+  geom_vline(xintercept = 10, linetype = "dashed", color = "red") +
+  xlab("Number of observation per species")
+```
+
+A certain amount of species have less than 10 observations indicating maybe the need for a nested design (e.g. genus).
+
+## Model
+
+```{r fit}
+#| eval: false
+fit <- brm(
+  bf(CD ~ a + b*TotalHeight_m,
+    a ~ 1 + 1 | standardized_name,
+    b ~ 1 + 1 | standardized_name,
+    nl = TRUE
+  ),
+  prior = c(
+    prior(normal(0, 10), nlpar = "a"),
+    prior(normal(0.2, 10), nlpar = "b")
+  ),
+  data = data, chains = 2, cores = 2, threads = 10
+)
+save(fit, file = "cd/fit.Rdata")
+fit %>%
+  spread_draws(
+    b_a_Intercept, r_standardized_name__a[standardized_name, ],
+    b_b_Intercept, r_standardized_name__b[standardized_name, ]
+  ) %>%
+  mutate(a = b_a_Intercept + r_standardized_name__a) %>%
+  mutate(b = b_b_Intercept + r_standardized_name__b) %>%
+  group_by(standardized_name) %>%
+  summarise(a = median(a), b = median(b)) %>%
+  mutate(standardized_name = gsub(".", " ",
+    standardized_name,
+    fixed = TRUE
+  )) %>%
+  write_tsv("chains/cd/draws.tsv")
+```
+
+I'm using previous parameters values as a prior but with wide variance.
+
+```{r rhat}
+load('chains/cd/fit.Rdata')
+mcmc_rhat(rhat(fit$fit))
+```
+
+We had a good convergence.
+
+```{r ppc}
+#| message: false
+pp_check(fit)
+```
+
+We had good post-predictive checks.
+
+```{r tab}
+sjPlot::tab_model(fit)
+```
+
+The mean a and b are close but higher than the previous used values (0.0 and 0.2).
+
+```{r values}
+#| message: false
+#| warning: false
+read_tsv("chains/cd/draws.tsv") %>% 
+  left_join(select(data, standardized_name, n_individual_cd)) %>% 
+  ggplot(aes(a, b, size = n_individual_cd)) +
+  geom_point() +
+  theme_bw() +
+  xlab(expression(a[CD])) +
+  ylab(expression(b[CD])) +
+  scale_size_continuous("N")
+```
+
+And we obtained wide range among species.
+
+```{r}
+#| message: false
+#| warning: false
+read_tsv("chains/cd/draws.tsv") %>% 
+  mutate(h = list(seq(1, 100, 1))) %>% 
+  unnest(h) %>% 
+  mutate(cd = a+ b*h) %>% 
+  ggplot(aes(h, cd, group = standardized_name)) +
+  geom_line(alpha = .1) +
+  theme_bw()  +
+  xlab("Height [ m ]") +
+  ylab("Crown Depth [ m ]")
+```
+
+And the predicted trajectories look okay.
+
+```{r}
+read_tsv("chains/cd/draws.tsv") %>% 
+  mutate(h = 1) %>% 
+  mutate(cd = a+ b*h) %>% 
+  ggplot(aes(cd)) +
+  geom_histogram() +
+  theme_bw()
+```

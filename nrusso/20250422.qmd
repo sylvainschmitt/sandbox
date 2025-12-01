@@ -1,0 +1,90 @@
+---
+title: "20250415"
+author: "Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+```{r set}
+library(tidyverse)
+library(rcontroll)
+library(ggfortify)
+options(knitr.kable.NA = "")
+load("data/trollSim_600yrs_10Apr2025.RData")
+TROLL.version()
+```
+
+```{r}
+sim600
+```
+
+```{r}
+rcontroll::autoplot(sim600)
+```
+
+```{r}
+read_csv("data/biomass_estimates_CamSites.csv") %>% 
+  select(agb_Mg_per_Ha) %>% 
+  vtable::st()
+```
+
+```{r}
+rcontroll::autoplot(sim600, var = "agb") +
+  geom_hline(yintercept = 321*10^3, col = "blue") +
+  geom_hline(yintercept = c(226, 413)*10^3,
+             col = "blue", linetype = "dashed")
+```
+
+```{r}
+rcontroll::autoplot(sim600, var = "sum10") +
+  geom_hline(yintercept = 450, col = "blue") +
+  geom_hline(yintercept = c(200, 600),
+             col = "blue", linetype = "dashed")
+```
+
+```{r}
+rcontroll::autoplot(sim600, var = "sum30") +
+  geom_hline(yintercept = 100, col = "blue") +
+  geom_hline(yintercept = c(50, 150),
+             col = "blue", linetype = "dashed")
+```
+
+```{r}
+ft <- sim600@inputs$species %>% 
+  mutate(Lophira = (s_name == "Lophira_alata"))
+autoplot(princomp(select(ft, -s_name, -Lophira), cor = TRUE), 
+         data = ft, alpha = 1, col = "Lophira",
+         loadings.label.size = 6,
+         loadings.label.colour = 'red', loadings.label.vjust = 1.1,
+         loadings.label.repel   = TRUE,
+         loadings = T, loadings.label = T, loadings.colour = 'red') +
+  coord_equal() +
+  geom_hline(aes(yintercept = 0), col = 'black', linetype = "dotted") +
+  geom_vline(aes(xintercept = 0), col = 'black', linetype = "dotted") +
+  theme_bw()
+```
+
+```{r}
+t <- ft %>% 
+  gather(trait, value, -s_name, -Lophira)
+ggplot(t, aes(value)) +
+  geom_histogram() +
+  facet_wrap(~ trait, scales = "free") +
+  theme_bw() +
+  geom_vline(aes(xintercept = value), filter(t, Lophira), col= "red")
+```
+
+```{r}
+ft %>% 
+  mutate(dbh = list(seq(1, 150, 1)/100)) %>% 
+  unnest(dbh) %>% 
+  mutate(cr = exp(s_CR_a+s_CR_b*log(dbh))) %>% 
+  ggplot(aes(dbh, cr, group = s_name, col = Lophira)) +
+  geom_line() +
+  theme_bw() +
+  scale_x_log10() +
+  scale_y_log10()
+```
+
