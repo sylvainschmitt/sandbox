@@ -1,0 +1,117 @@
+---
+title: "Gustavo"
+author: "S. Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+bibliography: references.bib
+---
+
+# Lecture
+
+-   About tree height allometry: @molto2014
+-   TALLO database: @jucker2022
+-   `cmdstanr` installation: <https://mc-stan.org/cmdstanr/articles/cmdstanr.html>
+-   `stan` programming: <https://mc-stan.org/>
+
+# Setup
+
+You only need the `tidyverse` package for table manipulation and figures preparation, `cmdstanr`, `brms`, and `bayesplot` for Bayesian statistics.
+
+```{r libs}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(cmdstanr)
+library(brms)
+library(bayesplot)
+```
+
+# Data
+
+Data are tree hight and diameter from the TALLO database [@jucker2022] itself using Dos Santos data for Jamari. Longitude and latitude are in degrees, so 1 degree is about 110 km at the equator, and we use a buffer of 10km. We have a total of 974 individuals and 134 species.
+
+```{r data}
+#| message: false
+#| warning: false
+lon <- -62.99
+lat <- -9.11
+buffer <- 10/110
+data <- read_csv("gustavo/tallo.csv") %>% 
+  filter(longitude >= lon-buffer, longitude <= lon+buffer,
+          latitude >= lat-buffer, latitude <= lat+buffer) %>% 
+  mutate(species = paste(genus, species)) %>% 
+  select(tree_id, species, height_m, stem_diameter_cm)
+ggplot(data, aes(stem_diameter_cm, height_m)) +
+  geom_point(aes(col = species), alpha = 0.25) +
+  theme_bw() +
+  geom_smooth(se = FALSE) +
+  scale_color_discrete(guide = "none") +
+  xlab("diameter (cm)") + ylab("height (m)") +
+  ggtitle(paste(nrow(data), "individuals"),
+          paste(unique(data$species) %>% length(),
+                "species"))
+```
+
+# Model
+
+We model tree height $h$ in function of tree diameter $d$ as:
+
+$$
+h \sim logN( \frac{h_{max}\times d}{a + d} , \sigma)
+$$
+
+with $h_{max}$ the maximum tree height and $a$.
+
+# Example with `cmdstanr`
+
+```{r stan_model}
+mdata <- list(
+  N = nrow(data),
+  h = data$height_m,
+  d = data$stem_diameter_cm
+)
+model <- cmdstan_model("gustavo/gustavo.stan")
+model
+```
+
+```{r stan_fit}
+fit <- model$sample(data = mdata, parallel_chains = 4, 
+                    show_messages = FALSE, show_exceptions = FALSE)
+fit
+```
+
+```{r stan_pars}
+fit$draws(c("hmax", "a")) %>% 
+  mcmc_hist()
+```
+
+```{r stan_proj}
+ggplot(data, aes(stem_diameter_cm, height_m)) +
+  geom_point(col = "lightgrey") +
+  stat_function(fun = function(x) 54.50*x/(33.90+x)) +
+  theme_bw() +
+  xlab("diameter (cm)") + ylab("height (m)") +
+  ggtitle(paste(nrow(data), "individuals"),
+          paste(unique(data$species) %>% length(),
+                "species"))
+```
+
+# Example with `brms` 
+
+```{r fit_brm}
+#| eval: false
+fit <- brm(bf(log(h) ~ log(hmax * d/ (a + d)), 
+              hmax ~ 1, a ~ 1,
+              nl = TRUE), 
+           prior = c(
+             prior(uniform(0, 100), lb = 10, nlpar = "hmax"),
+             prior(uniform(0, 100), lb = 0, nlpar = "a")
+             ),
+           data = mdata, chains = 4, cores = 4)
+fit
+```
+
+# References
