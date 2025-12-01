@@ -1,0 +1,166 @@
+---
+title: "Margaux"
+author: "S. Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+---
+
+```{r set}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(brms)
+library(cmdstanr)
+library(bayesplot)
+library(lme4)
+data <- readxl::read_xlsx("data/tableau_recap_res_env_mod_abu.xlsx")
+```
+
+## Data
+
+Data are correlation coefficients from the residual correlation matrix of the jSDM model (see https://ecology.ghislainv.fr/jSDM/articles/jSDM.html).
+They can be represented as an heatmap:
+
+```{r}
+data %>% 
+  ggplot(aes(sp1, sp2, fill = values)) +
+  geom_raster() +
+  theme_bw() +
+  scale_fill_viridis_c("R") +
+  theme(axis.title = element_blank(),
+        axis.text = element_blank())
+```
+
+The distribution of the data is bimodal on [-1,1] in a U shape:
+
+```{r}
+#| message: false
+data %>% 
+  ggplot(aes(values)) +
+  geom_histogram() +
+  theme_bw()
+```
+
+But the distribution can also be seen as two exponential decay distributions following a proportion on [0,1] if we treat separately positive and negative interactions:
+
+```{r}
+#| message: false
+data %>% 
+  ggplot(aes(values)) +
+  geom_histogram() +
+  theme_bw() +
+  facet_wrap(~ values > 0, scales = "free")
+```
+
+To choose the distribution for modelling we will focus first on the negative interactions with only invasive alien species first (IAS):
+
+```{r}
+#| message: false
+data <- filter(data, values < 0, typesp1bis == "IAS")
+data %>% 
+  ggplot(aes(values)) +
+  geom_histogram() +
+  theme_bw()
+```
+
+## Distribution family
+
+We first explored the possibility to use an exponential distribution to model an exponential decay but defined on R+ (see below),
+and we then found the beta distribution defined on [0,1] for proportion to be better.
+We used `brms` as it is both more versatile (only one with the exponential distribution implemented) 
+and allowed easily to implement mixed model with `lme4` extended syntax for Margaux which is not used to the stan syntax.
+But a frequentist approach might be used with GLMM for beta regressions.
+
+The writting in `brms` is pretty straightforward:
+
+```{r}
+fit_exp <- brm(formula = (values+1) ~ typesp2,
+               data = data, family = "exponential", cores = 4,
+               silent = 2, refresh = 0)
+fit_beta <- brm(formula = (values+1) ~ typesp2,
+                data = data, family = "Beta", cores = 4,
+                 silent = 2, refresh = 0)
+```
+
+Using `loo` we can quickly compare the models and see that the beta regression better explains the observed distribution:
+
+```{r}
+loo_compare(loo(fit_exp),
+            loo(fit_beta))
+```
+
+And this can be easily seen using Posterior Predictive Chech (PPC) with `bayesplot`.
+The exponential decay missed part on the variation and conitnue after 1:
+
+```{r}
+pp_check(fit_exp)
+```
+
+Whereas the beta regression nicely fit the observed distribution and is better defined on [0,1]:
+
+```{r}
+pp_check(fit_beta)
+```
+
+And you can simply see the conditional effects with `brms`:
+
+```{r}
+conditional_effects(fit_beta)
+```
+
+Further information on model diagnostic and parameters manipulation and outputs can be easily found online, 
+such as https://biol609.github.io/lectures/23c_brms_prediction.html .
+
+## Old : tests with the exponential distribution
+
+At first we explored the response with an exponential distribution using `cmdstanr`, `brms`, `glm` and `lme4`. Below are the codes just for memory.
+
+## `cmdstanr`
+
+In case we want to write manually the model in stan we can use `cmdstanr`,
+the model writes as:
+
+```{r}
+model <- cmdstan_model("model/margaux.stan")
+print(model)
+```
+
+And you can fit it as follow:
+
+```{r}
+model$sample(
+  data = list(
+    N = nrow(data),
+    y = data$values
+  ),
+  parallel_chains = 4,
+  show_messages = FALSE,
+  show_exceptions = FALSE
+)
+```
+
+
+## `glm`
+
+In case we want to fit it with a frequentist approach,
+in `glm` the exponential distribution is not defined so we have to use the more general form `Gamma(link="log")`:
+
+```{r}
+glm((values+1) ~ typesp2, 
+    data = data, family = Gamma(link="log")) %>% 
+  summary()
+```
+
+## `lme4`
+
+In case we want to fit it with a frequentist approach including random effects,
+in `lme4` the exponential distribution is not defined so we have to use the more general form `Gamma(link="log")`:
+
+```{r}
+glmer((values+1) ~ 1|typesp2, 
+      data = data, family = Gamma(link="log")) %>% 
+  summary()
+```

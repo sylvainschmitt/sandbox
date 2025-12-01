@@ -1,0 +1,19 @@
+---
+title: "mrojat"
+author: Sylvain Schmitt
+date: today
+date-format: medium
+format: 
+  gfm:
+    toc: true
+    toc-depth: 1
+---
+
+Analyses developed during the doctorate of Margaux Rojat at AMAP on invasive plan species in the Reunion island.
+
+**mrojat** includes:
+
+-   `margaux.qmd` codes to test the distribution used for the models
+-   `margaux2.qmd` more codes to test the distribution used for the models
+
+Contact: margaux.rojat@ird.fr; ghislain.vieilledent@cirad.fr; robin.pouteau@ird.fr

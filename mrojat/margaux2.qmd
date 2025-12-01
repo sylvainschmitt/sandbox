@@ -1,0 +1,160 @@
+---
+title: "Margaux"
+author: "S. Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+---
+
+```{r set}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(jSDM)
+set.seed(42)
+data <- readxl::read_xlsx("data/tableau_recap_res_env_mod_abu.xlsx")
+```
+
+
+
+```{r}
+library(cmdstanr)
+library(bayesplot)
+datam <- filter(data, values < 0) %>% 
+  filter(typesp1bis == "IAS") %>% 
+  mutate(c2num = as.numeric(as.factor(typesp2))) %>% 
+  mutate(x = rnorm(nrow(.)))
+
+
+model <- cmdstan_model("model/margaux.stan")
+fit <- model$sample(
+  data = list(
+    N = nrow(datam),
+    C = max(datam$c2num),
+    y = datam$values,
+    class2 = datam$c2num
+  ),
+  parallel_chains = 4
+)
+fit$summary("lambda") %>% 
+  separate(variable, c("lambda", "c2num"), convert = TRUE) %>% 
+  left_join(select(datam, typesp2, c2num) %>% unique()) %>% 
+  ggplot(aes(median, typesp2)) +
+  geom_segment(aes(x = median - sd, xend = median + sd)) +
+  geom_segment(aes(x = q5, xend = q95), size = .1) +
+  geom_point() +
+  theme_bw()
+fit$draws("lambda") %>% 
+  mcmc_areas_ridges()
+
+fit$summary("lambda") %>% 
+  separate(variable, c("lambda", "c2num"), convert = TRUE) %>% 
+  left_join(select(datam, typesp2, c2num) %>% unique()) %>% 
+  select(typesp2, mean) %>% 
+  mutate(quantile = list(seq(0:100)/100)) %>% 
+  unnest() %>% 
+  mutate(y = dexp(x = quantile, rate = mean)) %>% 
+  ggplot(aes(quantile-1, y, col = typesp2)) +
+  geom_line() +
+  theme_bw()
+```
+
+https://biol609.github.io/lectures/23c_brms_prediction.html
+
+```{r}
+library(brms)
+fit_exp <- brms::brm(formula = (values+1) ~ typesp2,
+                     data = datam, family = "exponential", cores = 4)
+fit_beta <- brms::brm(formula = (values+1) ~ typesp2,
+                      data = datam, family = "Beta", cores = 4)
+pp_check(fit_exp)
+pp_check(fit_beta)
+loo_compare(loo(fit_exp),
+            loo(fit_beta))
+```
+
+```{r}
+conditional_effects(fit_beta)
+```
+
+
+```{r}
+library(brms)
+fit <- brms::brm(formula = (values+1) ~ typesp2|sp2 + values_env,
+                   data = datam, family = "exponential", cores = 4)
+fit
+pp_check(fit)
+```
+
+
+```{r}
+glm((values+1) ~ typesp2 + values_env, data = datam, family = Gamma(link="log")) %>% summary()
+lme4::glmer((values+1) ~ typesp2 + 0 |sp2, data = datam, family = Gamma(link="log"))
+```
+
+```{r}
+data %>% 
+  filter(values < 0) %>% 
+  ggplot(aes(values+1)) +
+  geom_histogram() +
+  theme_bw()
+```
+
+
+
+```{r}
+data %>% 
+  filter(typesp1bis == "IAS") %>% 
+  ggplot(aes(typesp2, 1-abs(values))) +
+  geom_boxplot() +
+  theme_bw() +
+  coord_flip() +
+  facet_wrap(~ values > 0, scales = "free_x") +
+  scale_y_sqrt()
+```
+
+```{r}
+data
+```
+
+
+```{r}
+data %>% 
+  filter(typesp1bis == "IAS", 
+         typesp2 %in% c("LCNT", "CR")) %>% 
+  ggplot(aes(sp2, values)) +
+  geom_boxplot() +
+  theme_bw() +
+  coord_flip() +
+  facet_wrap(~ typesp2 ~ values > 0, scales = "free")
+```
+
+```{r}
+data %>% 
+  ggplot(aes(values)) +
+  geom_histogram(binwidth = 0.01) +
+  theme_bw()
+```
+
+
+```{r}
+data %>% 
+  ggplot(aes(values)) +
+  geom_histogram() +
+  facet_grid(typesp1bis ~ typesp2bis) +
+  theme_bw()
+```
+
+
+```{r}
+data %>% 
+  # filter(typesp1 == "alien", typesp2 == "natives") %>% 
+  filter(typesp1 == "IAS") %>% 
+  ggplot(aes(values)) +
+  geom_histogram() +
+  facet_wrap(~ sp1) +
+  theme_bw()
+```
+
