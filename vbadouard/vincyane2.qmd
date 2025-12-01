@@ -1,0 +1,48 @@
+---
+title: "Vincyane"
+author: "Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+```{r set}
+library(tidyverse)
+library(ggfortify)
+data <- read_csv("data/dataplot.csv") %>% 
+  select(parameter, m, Species, TreeHeightQ95) %>% 
+  pivot_wider(names_from = parameter, values_from = m) %>% 
+  mutate(a = -a) %>% 
+  rename(stature = TreeHeightQ95,
+         "light preference" = O, 
+         "topographic preference" = tau,
+         "light specialization" = a,
+         species = Species, 
+         )
+autoplot(princomp(select(data, -species), cor = TRUE), 
+         data = data, alpha = 0.25, 
+         text = "species",
+         loadings.label.size = 6,
+         loadings.label.colour = 'red',
+         loadings.label.vjust = 1.1,
+         loadings.label.repel   = TRUE,
+         loadings = T, loadings.label = T, loadings.colour = 'red') +
+  geom_hline(aes(yintercept = 0), col = 'black', linetype = "dotted") +
+  geom_vline(aes(xintercept = 0), col = 'black', linetype = "dotted") +
+  theme_bw()
+```
+
+```{r}
+library(rgl)
+plot3d( 
+  x=data$`topographic preference`,
+  y=data$`light preference`,
+  z=data$`light specialization`, 
+  type = 's', 
+  radius = .1,
+  xlab="topographic preference", 
+  ylab="light preference",
+  zlab="light specialization")
+```
+

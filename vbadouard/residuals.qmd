@@ -1,0 +1,81 @@
+---
+title: "Binomial residuals"
+author: "Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+```{r set}
+#| include: false
+library(tidyverse)
+library(cmdstanr)
+library(DHARMa)
+options(knitr.kable.NA = "")
+```
+
+## Parameters
+
+```{r}
+a <- 1
+b <- 0.5
+```
+
+## Data
+
+```{r data}
+inv_logit <- function(x) exp(x)/(1+exp(x))
+x <- rnorm(100)
+y <- rbinom(n = 100, size = 1, prob = inv_logit(a*x+b))
+data <- data.frame(x = x, y = y)
+ggplot(data, aes(x, y)) +
+  geom_point() +
+  stat_function(fun = function(x) inv_logit(a*x+b)) +
+  theme_bw()
+```
+
+## Model
+
+```{r}
+model <- cmdstan_model("model/test.stan")
+model$print()
+```
+
+## Fit
+
+```{r}
+fit <- model$sample(list(n = 100, x = x, y = y), 
+                    parallel_chains = 4, refresh = 500)
+fit
+```
+
+## Residuals
+
+```{r}
+res <- data.frame(
+  theta = fit$summary("theta", "mean")$mean,
+  y_p = fit$summary("y_p", "mean")$mean,
+  y = y,
+  x = x
+) %>% 
+  mutate(e = y - y_p)
+res %>% 
+  ggplot(aes(x, e)) +
+  geom_point() +
+  theme_bw()
+```
+
+## DHARMa
+
+Help: https://cran.r-project.org/web/packages/DHARMa/vignettes/DHARMa.html#binomial-data For Bayesian: https://cran.r-project.org/web/packages/DHARMa/vignettes/DHARMaForBayesians.html
+
+Attention bien prendre un tirage dans une bernoulli:
+
+```{r}
+sim <- createDHARMa(simulatedResponse = t(fit$draws("y_p", format = "draws_matrix")),
+                    observedResponse = y,
+                    fittedPredictedResponse = fit$summary("y_p", "median")$median,
+                    integerResponse = TRUE)
+plot(sim)
+```

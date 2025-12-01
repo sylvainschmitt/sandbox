@@ -1,0 +1,147 @@
+---
+title: "Vincyane"
+author: "S. Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+---
+
+```{r set}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(cmdstanr)
+set.seed(42)
+n <- 10^4
+inv_logit <- function(x) 1/(1+exp(-x))
+```
+
+The general idea is that the observed distribution of species in relation to light ($P(S)$) is the result of two factors: the simple distribution of trees in relation to light ($P(A)$), and the preference of species in relation to light $P(S|A)$. We are interested in the latter factor because it is independent of the distribution of trees in relation to light.
+
+$$
+P(S) = P(A) \times P(S|A)
+$$
+
+## $P(A)$ & $P(A)'$
+
+We can simulate tree distribution with ilght as a simple log-normal distribution.
+
+```{r}
+#| message: false
+#| warning: false
+p_a <- data_frame(p_a = rlnorm(n, meanlog = log(5), sdlog = 1)) %>% 
+  filter(p_a < 100)
+p_a %>% 
+  ggplot(aes(p_a)) +
+  geom_histogram() +
+  theme_bw() +
+  xlab("Transmittance (%)") +
+  ylab("P(A)")
+```
+
+Alternatively, not considering tree distribution or a null tree distribution would be using a uniform distribution $P(A)'$:
+
+```{r}
+#| message: false
+#| warning: false
+p_ap <- data_frame(p_ap = runif(n, 0, 100))
+p_ap %>% 
+  ggplot(aes(p_ap)) +
+  geom_histogram() +
+  theme_bw() +
+  xlab("Transmittance (%)") +
+  ylab("P(A)'")
+```
+
+## $P(S|A)$
+
+We can now use the model to generate a species with an optimum O of 50%:
+
+```{r}
+#| message: false
+#| warning: false
+O <- 70
+a <- -100
+gamma <- 2
+suitability <- function(light) inv_logit(a*(light/100 - O/100)^2 + gamma)
+data_frame(light = exp(seq(-7, 0, by = 0.1))*100) %>% 
+  mutate(p_sa = suitability(light)) %>% 
+  ggplot(aes(light, p_sa)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Transmittance (%)") +
+  ylab("P(S|A)")
+```
+
+## $P(S)$
+
+So we can simply make the product of probabilities to get the observed distribution:
+
+```{r}
+#| message: false
+#| warning: false
+p_s <- p_a %>% 
+  mutate(p_s = suitability(p_a)) %>% 
+  rowwise() %>% 
+  mutate(presence = rbinom(1, 1, p_s)) %>% 
+  filter(presence == 1)
+p_s %>% 
+  ggplot(aes(p_a)) +
+  geom_histogram() +
+  theme_bw() +
+  xlab("Transmittance (%)") +
+  ylab("P(S)")
+```
+
+## Inferences with $P(A)$
+
+We can now make the Bayesian inference of parameters with observed tree distribution with light $P(A)$ as absence:
+
+```{r}
+#| message: false
+#| warning: false
+model <- cmdstan_model("model/vincyane3.stan")
+model$print()
+```
+
+```{r}
+fit <- model$sample(
+  list(
+    n = nrow(p_s) + nrow(p_a),
+    light = c(p_s$p_a, p_a$p_a),
+    presence = c(
+      rep(1, nrow(p_s)),
+      rep(0, nrow(p_a))
+    )
+    ),
+  parallel_chains = 4,
+  show_messages = FALSE
+)
+fit
+```
+
+## Inferences with $P(A)$
+
+Oppositely, we can make the Bayesian inference of parameters with assumed uniform tree distribution with light $P(A)'$ as absence:
+
+```{r}
+fit <- model$sample(
+  list(
+    n = nrow(p_s) + nrow(p_ap),
+    light = c(p_s$p_a, p_ap$p_ap),
+    presence = c(
+      rep(1, nrow(p_s)),
+      rep(0, nrow(p_ap))
+    )
+    ),
+  parallel_chains = 4,
+  show_messages = FALSE
+)
+fit
+```
+
+## Conclusion
+
+The model not considering tree distribution with light infer a lower optimum biased by the greater abundances of smaller trees.
