@@ -1,0 +1,18 @@
+---
+title: "bruis"
+author: Sylvain Schmitt
+date: today
+date-format: medium
+format: 
+  gfm:
+    toc: true
+    toc-depth: 1
+---
+
+Analyses developed during the post doc of Bianca Ruis at the CRBE on modelling water table depth dynamics in TROLL.
+
+**bruis** includes:
+
+-   `bianca.qmd` codes to make figures of water table and soil water content and potential.
+
+Contact: biancafaziorius@gmail.com; jerome.chave@utoulouse.fr; isabelle.marechaux@inrae.fr
