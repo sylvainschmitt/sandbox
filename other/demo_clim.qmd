@@ -1,0 +1,31 @@
+---
+title: "Demography and climate"
+author: "S. Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+bibliography: references.bib
+---
+
+The idea is to quickly record ideas and analyses on the demographic response of forests to climate change, especially anomalies. These analyses could be part of the BioForest project or not, and would be based on super sites (e.g. Paracou, Mbaiki and SUAS, pending PI acceptance) with numerous years of data and a high temporal frequency. They would also include tree-level data and spatialised trees. Here is a quick diagram showing the connections I want to make.
+
+```{r }
+#| eval: false
+flowchart TB
+    n1["Logging<br>(time)"] --> B["Vegetation structure<br>(NCI, ...)"]
+    A["Macro-Climate<br>(ERA5-Land, CHIRPS, flux towers, ...)"] --> n2["Microclimate<br>(unobserved)"]
+    B --> n2
+    n2 --> n3["Tree / Species Demography"]
+    n3 --> n4["Growth<br>(Bertalanfy, ...)"] & n5["Recruitment<br>(Binomial, DM, Poisson, ...)"] & n6["Survival<br>(Cox)"]
+    n4 --> n7["DBH ~ Ind (DBH-1), Sp (FT), Site"]
+    n5 --> n8@{ label: "Nind ~ Sp (FT),<span style=\"padding-left:\">Site</span>" }
+    n6 --> n9["Death ~ Ind (DBH), Sp (FT), Site"]
+    n1 -.-> n2
+```
+
+```{r}
+knitr::include_graphics("chart.svg")
+```
+
