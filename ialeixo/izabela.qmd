@@ -1,0 +1,96 @@
+---
+title: "TROLL 4.0 in rcontroll"
+author: "Sylvain Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+The CRAN version of rcontroll is currently based on TROLL 3. To install rcontroll with TROLL 4.0 and water fluxes, use the following command:
+
+```{r install}
+#| eval: false
+devtools::install_github("sylvainschmitt/rcontroll", ref = "TROLLV4")
+```
+
+Then you can load it.
+
+```{r set}
+#| message: false
+#| warning: false
+library(rcontroll)
+```
+
+To run it, you will need to define global parameters using the generate_parameters function. You will need at least to precise the grid size in meters (cols and rows parameters) and the number of iterations in days (nbiter parameter, use solely 31 days for a quick test as the model takes time to run). You can have a look to other parameters with `?generate_parameters` in the console.
+
+```{r pars}
+global <- generate_parameters(cols = 200, rows = 200, nbiter = 31)
+knitr::kable(head(global))
+```
+
+Then you will need species parameters. Default values for French Guiana are available in `TROLLv4_species`:
+
+```{r sp}
+TROLLv4_species %>% 
+  head() %>% 
+  knitr::kable()
+```
+
+Then you will need soil parameters. Default values for Paracou are available in `TROLLv4_pedology`:
+
+```{r soil}
+TROLLv4_pedology[1:7] %>% 
+  head() %>% 
+  knitr::kable()
+```
+
+
+Then you will need half-hourly values of temperature, radiations, vapour pressure deficit and wind speed. Default values for Paracou are available in `TROLLv4_dailyvar`:
+
+```{r daily}
+TROLLv4_dailyvar %>% 
+  head() %>% 
+  knitr::kable()
+```
+
+Then you will need daily values of night temperature and rainfall. Default values for Paracou are available in `TROLLv4_climate`:
+
+```{r climate}
+TROLLv4_climate %>% 
+  head() %>% 
+  knitr::kable()
+```
+
+> Note that helpers functions exists in the pacakges to derive the half-hourly and daily tables from public datasets such as ERA5-Land. They can also be derived from local eddy flux towers measurements.
+
+Great we have all the needed inputs and can now launch a quick 31-days simulation:
+
+```{r sim}
+sim <- troll(
+  name = "test",
+  global = global,
+  species = TROLLv4_species, 
+  pedology = TROLLv4_pedology,
+  climate = TROLLv4_climate,
+  daily = TROLLv4_dailyvar,
+  verbose = TRUE
+)
+```
+
+The resulting simulation object `sim` contains different attributes accessible with the `@` such as parameters, inputs, the forest end state, the ecosystem metrics along the simulation and the species metrics along the simulation.
+
+We can quickly plot simulation outputs using the autoplot method for three types of outputs defined with the what parameter:
+
+- the temporal trajectories of variables for the whole ecosystem or user-defined species,
+- the spatial patterns of variables, including species labels, at forest initial or final pattern,
+- the distribution of variables at forest initial or final pattern for the whole ecosystem or user-defined species.
+
+For instance:
+
+```{r autoplot}
+rcontroll::autoplot(sim)
+```
+
+More informations on the usage of rcontroll can be found in the original article (https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/2041-210X.14215) and on the online documentation (https://sylvainschmitt.github.io/rcontroll/index.html). However, take care as these documentations corresponds to TROLL and rcontroll 3, which may differ a bit in with TROLL 4.0 and the corresponding rcontroll (documentation in preparation).
+
