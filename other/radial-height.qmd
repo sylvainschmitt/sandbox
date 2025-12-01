@@ -1,0 +1,45 @@
+---
+title: "Growth radial-height"
+author: "S. Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+bibliography: references.bib
+---
+
+Using radial growth from @schmitt2023 and height growth from @schmitt2025.
+
+```{r data}
+#| message: false
+#| warning: false
+library(tidyverse)
+radial <- read_tsv("../old/treegrowth/save/ecoevo/growthfull.tsv") %>% 
+  rename_all(tolower) %>% 
+  group_by(species) %>% 
+  summarise(gmax = median(gmax)) %>% 
+  separate(species, c("genus", "species"))
+load("../alt/troll_eval/outputs/brms_tallo.Rdata")
+height <- fit %>% 
+  tidybayes::spread_draws(b_hmax_Intercept, r_species__hmax[species,],
+               b_ah_Intercept, r_species__ah[species,]) %>% 
+  mutate(ah = b_ah_Intercept + r_species__ah) %>% 
+  mutate(hmax = b_hmax_Intercept + r_species__hmax) %>% 
+  group_by(species) %>% 
+  summarise(ah = median(ah), hmax = median(hmax)) %>% 
+  separate(species, c("genus", "species"))
+data <- left_join(radial, height) %>% 
+  mutate(label = paste0(str_sub(genus, 1, 1),
+                        ".", species))
+data %>% 
+  ggplot(aes(gmax, ah*100, col = hmax)) +
+  geom_point() +
+  ggrepel::geom_text_repel(aes(label = label), size  = 1.8, fontface = "italic") +
+  scale_x_log10() +
+  scale_color_viridis_c(expression(Asymptotic~height~h[max]~"["~m~"]")) +
+  theme_bw() +
+  xlab(expression(Maximum~growth~potentiel~G[max]~"["~cm~yr^-1~"]")) +
+  theme(legend.position = "bottom") +
+  ylab(expression(Diameter~at~half-height~a[h]~"["~cm~"]"))
+```
