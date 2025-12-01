@@ -1,0 +1,19 @@
+---
+title: "llima"
+author: Sylvain Schmitt
+date: today
+date-format: medium
+format: 
+  gfm:
+    toc: true
+    toc-depth: 1
+---
+
+Analyses developed during the master thesis of Lucas Lima at F&S on the effect of fire and selective logging on forest height in Amazonia.
+
+**llima** includes:
+
+-   `lucas.qmd` analyses to explore the use of the common framework for modelling recovery in disturbed tropical forests (Maurent et al. 2023), as applied to Lucas’s remote sensing analyses of the impact of logging and fires on the tree cover and canopy height of Amazonian forests.
+-   `lucas2.qmd` analyses explore the use of the common framework for modelling recovery in disturbed tropical forests (Maurent et al. 2023), as applied to Lucas’s remote sensing analyses of the impact of logging and fires on the tree cover and canopy height of Amazonian forests.
+
+Contact: lucas.lima@cirad.fr; julie.betbeder@cirad.fr; lilian.blanc@cirad.fr

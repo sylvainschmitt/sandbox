@@ -27,7 +27,7 @@ Please explore them to understand how they work. However, the purpose of each fo
 -   `nrusso/` are analyses developed during the post doc of Nicholas Russo at Harvard on modelling the effect of defaunation in Central Africa on forest dynamics with TROLL.
 -   `gbediaga/` are analyses developed during the doctorate of Gustavo Bediaga at F&S on Brazilian forest concessions Carbon balance.
 -   `ialeixo/` are analyses developed during the post doc of Izabella Aleixo at INPA on modelling the effect of FACE Amazonia on forest dynamics with TROLL.
--   `lferrante/` are analyses developed during the master thesis of Lucas Ferrante Breda at F&S on the effect of fire and selective logging on forest height in Amazonia.
+-   `llima/` are analyses developed during the master thesis of Lucas Lima at F&S on the effect of fire and selective logging on forest height in Amazonia.
 -   `mrojat/` are analyses developed during the doctorate of Margaux Rojat at AMAP on invasive plan species in the Reunion island.
 -   `vbadouard/` are analyses developed during the doctorate of Vincyane Badouard at AMAP on canopy and undrestory species light niche in French Guiana.
 -   `other/` are other unclassified analyses.

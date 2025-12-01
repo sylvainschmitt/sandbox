@@ -1,0 +1,100 @@
+---
+title: "Lucas 2"
+author: "Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+bibliography: references.bib
+---
+
+```{r set}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(cmdstanr)
+library(bayesplot)
+set.seed(42)
+```
+
+
+## Data
+
+```{r data}
+#| message: false
+#| warning: false
+#| fig-cap: "Tree cover recovery trajectory per cell (one line) depending on the year since disturbance. Blue line represents a loess regression."
+data <- read_csv("data/veg3_TC_CH_by_ysd_fire_filtered100px_MSPA.csv") %>% 
+  select(cell_id, ysd_fire, tc_wri) %>% 
+  rename(cell = cell_id, year = ysd_fire, cover = tc_wri) %>% 
+  mutate(cell_index = as.numeric(as.factor(cell))) %>% 
+  sample_n(10^4)
+data %>% 
+  ggplot(aes(year, cover)) +
+  geom_boxplot(aes(group = year)) +
+  geom_smooth(se = FALSE) +
+  theme_bw() +
+  xlab("Year since disturbance (y)") +
+  ylab("Tree cover relative to undisturbed pixels (%)")
+```
+
+## Stan
+
+```{r fit}
+#| message: false
+#| warning: false
+#| eval: false
+model <- cmdstan_model("model/lucas2.stan")
+mdata <- list(
+  n = nrow(data),
+  c = max(data$cell_index),
+  y = data$cover,
+  t = data$year,
+  cell = data$cell_index
+)
+fit <- model$sample(mdata, chains = 4,
+                    parallel_chains = 4, 
+                    save_warmup = FALSE,
+                    output_dir = "lucas2_chains")
+```
+
+## Results
+
+```{r summary}
+fit <- as_cmdstan_fit(list.files("chains/lucas2", full.names = TRUE))
+fit$summary(c("alpha", "tau")) %>% 
+  knitr::kable(caption = "lambda and alpha mean values across cells and their associated variance.")
+```
+
+```{r proj}
+#| message: false
+#| warning: false
+#| fig-cap: "Inferred mean recovery trajectory across cell with in black the median of the fitted trajectory and in grey the 95th confidence interval."
+fit$summary("y_pred") %>% 
+  separate(variable, c("X1", "X2", "year"), convert = TRUE) %>% 
+  select(-X1, -X2) %>% 
+  rename(cover = mean) %>% 
+  ggplot(aes(year, cover)) +
+  geom_ribbon(aes(ymin = q5, ymax = q95), alpha = .5, col = NA) +
+  geom_line() +
+  theme_bw() +
+  ylim(0, 100) +
+  xlab("Year since disturbance (y)") +
+  ylab("Tree cover relative to undisturbed pixels (%)")
+```
+
+```{r lambdas}
+#| message: false
+#| warning: false
+#| fig-cap: "Caption."
+fit$summary(c("tau_c", "alpha_c"), "median") %>% 
+  separate(variable, "parameter") %>% 
+  pivot_wider(names_from = parameter, values_from = median) %>% 
+  unnest() %>% 
+  ggplot(aes(alpha, tau)) +
+  geom_point() +
+  theme_bw() +
+  xlab(expression(alpha[cell])) +
+  ylab(expression(tau[cell])) +
+  scale_y_log10()
+```

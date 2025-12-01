@@ -1,0 +1,173 @@
+---
+title: "Lucas"
+author: "Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+bibliography: references.bib
+---
+
+```{r set}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(cmdstanr)
+library(bayesplot)
+set.seed(42)
+```
+
+This short document aims to present and explore the use of the common framework for modelling recovery in disturbed tropical forests [@maurent2023], as applied to Lucas's remote sensing analyses of the impact of logging and fires on the tree cover and canopy height of Amazonian forests.
+
+## Data
+
+The selected data consists of pixels representing the percentage of tree cover relative to undisturbed forest, classified into hexagonal cells, as well as the number of years since the last disturbance. The resulting trajectory per cells shows an expected initial disturbance followed by a recovery phase toward an asymptotic value.
+
+> Note that it seems that many trajectories saturates around 90%.
+
+```{r data}
+#| message: false
+#| warning: false
+#| fig-cap: "Tree cover recovery trajectory per cell (one line) depending on the year since disturbance. Blue line represents a loess regression."
+data <- read_csv("data/veg3_TC_CH_by_ysd_fire_filtered100px_MSPA.csv") %>% 
+  select(cell_id, ysd_fire, tc_wri) %>% 
+  rename(cell = cell_id, year = ysd_fire, cover = tc_wri) %>% 
+  group_by(year, cell) %>% 
+  summarise(cover = mean(cover), pixels = n()) %>% 
+  ungroup() %>% 
+  mutate(cell_index = as.numeric(as.factor(cell)))
+data %>% 
+  ggplot(aes(year, cover)) +
+  geom_line(aes(group = cell), alpha = .1) +
+  geom_smooth(se = FALSE) +
+  theme_bw() +
+  xlab("Year since disturbance (y)") +
+  ylab("Tree cover relative to undisturbed pixels (%)")
+```
+
+## Model
+
+The model we use is derived from the common framework for modelling recovery in disturbed tropical forests [@maurent2023]. The forest attribute is first disturbed at $t=0$ with a decrease and result in a post-disturbance initial value $\alpha$. Then the attributes recover asymptotically in the long term to an equilibrium value of 100% of recovery with a recovery rate $\lambda$.
+
+$$
+\begin{align}
+y \sim \mathcal N (\mu, \sigma) \\
+\mu = \alpha + (100 - \alpha) \times rec(t) \\
+rec(t) = 1 - e^{-\lambda \times t} 
+\end{align}
+$$
+
+```{r fig_model}
+#| message: false
+#| warning: false
+#| fig-cap: "Schematic representation of the recovery model."
+rec <- function(time, alpha, lambda)
+  alpha + (100 - alpha) * (1 - exp(-lambda * time))
+data.frame(time = 0:30+0.1) %>%
+  mutate(y = rec(time, alpha = 50, lambda = 0.05)) %>%
+  bind_rows(data.frame(time = 0, y = 100)) %>%
+  ggplot(aes(time)) +
+  geom_line(aes(y = y)) +
+  geom_segment(aes(x = -5, y = 100, xend = 0, yend = 100)) +
+  theme_bw() +
+  theme(axis.title = element_blank()) +
+  ylim(0, 100) +
+  annotate("text",
+    x = 15, y = 70, label = "lambda",
+    col = "#a8d2d1", parse = TRUE, size = 8
+  ) +
+  annotate("text",
+    x = -4, y = 75, label = "alpha",
+    col = "#fc8a8a", parse = TRUE, size = 6
+  ) +
+  theme(axis.title = element_blank()) +
+  geom_segment(aes(x = -2, y = 50, xend = -2, yend = 100),
+    arrow = arrow(length = unit(0.2, "cm")), col = "#fc8a8a"
+  ) +
+  geom_segment(aes(x = -2, y = 100, xend = -2, yend = 50),
+    arrow = arrow(length = unit(0.2, "cm")), col = "#fc8a8a"
+  )
+```
+
+## Stan
+
+To infer the model we used a Bayesan framework implementing the model in the stan language as follow:
+
+> Note: Lucas we can discuss what's in it together. But normally you won't have to adapt the model.
+
+```{r stan_model}
+#| message: false
+#| warning: false
+model <- cmdstan_model("model/lucas.stan")
+model$print()
+```
+
+We defined one $\lambda$ and $\alpha$ per cell to model each trajectory and defined an hyperlaw to model the mean $\lambda$ and $\alpha$ across trajectories that we are interested in.
+
+Then we prepared the data in a list object in R to be explored in stan using `cmdtsanr`:
+
+```{r fit}
+#| message: false
+#| warning: false
+#| eval: false
+mdata <- list(
+  n = nrow(data),
+  c = max(data$cell_index),
+  y = data$cover,
+  t = data$year,
+  cell = data$cell_index
+)
+fit <- model$sample(mdata, chains = 4,
+                    parallel_chains = 4, 
+                    save_warmup = FALSE,
+                    output_dir = "chains/lucas")
+```
+
+> Note: same as above Lucas we can have a look at it together.
+
+## Results
+
+The model worked well and we obtained the mean $\lambda$ and $\alpha$ across cell trajectories with their respective variances across cells:
+
+```{r summary}
+fit <- as_cmdstan_fit(list.files("chains/lucas", full.names = TRUE))
+fit$summary(c("mu_alpha", "mu_lambda",
+              "sigma_alpha", "sigma_lambda")) %>% 
+  knitr::kable(caption = "lambda and alpha mean values across cells and their associated variance.")
+```
+
+For instance, the post-fire tree cover is 72.22 (13) % and recover with a rate of 0.06 (0.03). We can convert the recovery rate as the time to reach back 90% of the undisturbed value as $t_{90} = \frac{log(10)}{\lambda}$ , which is here 40 years. And we obtained the following mean trajectory across cell with in black the median of the fitted trajectory and in grey the 95th confidence interval:
+
+```{r proj}
+#| message: false
+#| warning: false
+#| fig-cap: "Inferred mean recovery trajectory across cell with in black the median of the fitted trajectory and in grey the 95th confidence interval."
+fit$summary("y_pred") %>% 
+  separate(variable, c("X1", "X2", "year"), convert = TRUE) %>% 
+  select(-X1, -X2) %>% 
+  rename(cover = mean) %>% 
+  ggplot(aes(year, cover)) +
+  geom_ribbon(aes(ymin = q5, ymax = q95), alpha = .5, col = NA) +
+  geom_line() +
+  theme_bw() +
+  ylim(0, 100) +
+  xlab("Year since disturbance (y)") +
+  ylab("Tree cover relative to undisturbed pixels (%)")
+```
+
+Last but not least, we can also explore the variations of parameters values across the trajectories of each cell, retrieving each cell $\alpha$ and $\lambda$. We obtain the figure below with the post-fire tree cover varying from 40% to 90% and recovery rate from 0 to 0.15 which correspond to a time to reach back 90% of the undisturbed value between 15 years and infinity (no recovery).
+
+```{r lambdas}
+#| message: false
+#| warning: false
+#| fig-cap: "Caption."
+fit$summary(c("lambda_c", "alpha_c"), "median") %>% 
+  separate(variable, "parameter") %>% 
+  pivot_wider(names_from = parameter, values_from = median) %>% 
+  unnest() %>% 
+  ggplot(aes(alpha, lambda)) +
+  geom_point() +
+  theme_bw() +
+  xlab(expression(alpha[cell])) +
+  ylab(expression(lambda[cell]))
+```
