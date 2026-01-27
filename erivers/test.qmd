@@ -1,0 +1,107 @@
+---
+title: "Test"
+author: "Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+```{r set}
+#| include: false
+library(tidyverse)
+library(cmdstanr)
+library(mgcv)
+library(bayesplot)
+```
+
+## Data
+
+```{r data}
+data <- read_tsv("~/Documents/bioforest/modelling/data/derived_data/data_rec.tsv", col_types = cols()) %>%
+  filter(variable == "agb") %>%
+  filter(site == "Paracou") %>% 
+  filter(plot == "7_1") %>% 
+  mutate(plotnum = as.numeric(as.factor(plot)),
+         ysd = rel_year-2) %>% 
+  select(plot, plotnum, year, ysd, y)
+ggplot(data, aes(year, y, col = plot)) +
+  geom_point() +
+  geom_line() +
+  theme_bw()
+```
+
+## AR model
+
+$$
+\begin{align}
+\mu_p(0) = y_p(ysd=0)\\
+\mu_p(ysd) = \alpha_p + \beta_p \times ysd \\
+y_p(ysd) \sim \mathcal N (\mu_p(ysd), \sigma)
+\end{align}
+$$
+
+```{r model}
+model <- cmdstan_model("models/test.stan")
+model$print()
+```
+
+```{r fit}
+mdata <- filter(data, ysd != 1)
+fit <- model$sample(
+  data = list(N = nrow(mdata), 
+              Y = max(mdata$ysd),
+              P = max(mdata$plotnum),
+              y0 = (filter(data, ysd == 1) %>% arrange(plotnum))$y,
+              y = mdata$y,
+              ysd = mdata$ysd,
+              plot = mdata$plotnum
+              ),
+  parallel_chains = 4
+  )
+```
+
+```{r}
+t <- fit$summary("mu") %>% 
+  separate(variable, c("mu", "plotnum", "ysd"), convert = TRUE) %>% 
+  left_join(data)
+filter(t, plotnum %in% 1:9) %>% 
+  ggplot(aes(year)) +
+  geom_ribbon(aes(ymin = q5, ymax  = q95), alpha = .3) +
+  geom_line(aes(y = median)) +
+  geom_point(aes(y = y)) +
+  theme_bw() + 
+  facet_wrap(~ plotnum, scales = "free")
+```
+
+```{r}
+bind_cols(
+  fit$summary("y_p"),
+  mdata
+) %>% 
+  filter(plotnum %in% 1:9) %>% 
+  ggplot(aes(year)) +
+  geom_ribbon(aes(ymin = q5, ymax  = q95), alpha = .3) +
+  geom_line(aes(y = median)) +
+  geom_point(aes(y = y)) +
+  theme_bw() + 
+  facet_wrap(~ plotnum, scales = "free")
+```
+
+```{r}
+fit$draws("alpha") %>% 
+  mcmc_intervals() +
+  theme_bw()
+```
+
+```{r}
+fit$draws("beta") %>% 
+  mcmc_intervals() +
+  theme_bw()
+```
+
+```{r}
+fit$draws("sigma") %>% 
+  mcmc_intervals() +
+  theme_bw()
+```

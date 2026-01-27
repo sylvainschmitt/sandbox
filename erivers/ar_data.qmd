@@ -1,0 +1,107 @@
+---
+title: "AR test true data"
+author: "Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+```{r set}
+#| include: false
+library(tidyverse)
+library(cmdstanr)
+library(mgcv)
+```
+
+## Parameters
+
+```{r pars}
+n <- 20
+# climate
+sigma_c <- 2
+gamma <- 0.5
+```
+
+## Climate
+
+```{r clim}
+set.seed(42)
+clim <- rnorm(n, (1:n)/n, sigma_c)
+tibble(
+  ysd = 1:n,
+  clim = clim
+) %>% 
+  ggplot(aes(ysd, clim, fill = clim)) +
+  geom_col() +
+  theme_bw() +
+  scale_fill_viridis_c()
+```
+
+## Forest
+
+```{r forest}
+data <- read_tsv("~/Documents/bioforest/modelling/data/derived_data/data_rec.tsv", col_types = cols()) %>%
+  filter(variable == "agb") %>%
+  filter(site == "Paracou") %>% 
+  filter(plot == "7_1") %>% 
+  mutate(ysd = 1:n()) %>% 
+  select(ysd, y) %>% 
+  mutate(clim = clim) %>% 
+  mutate(y_0 = y, y = y + gamma*clim)
+ggplot(data, aes(ysd, y)) +
+  geom_line(aes(y = y_0), linetype = "dotted") +
+  geom_line() +
+  geom_point(aes(col = clim)) +
+  theme_bw() +
+  scale_color_viridis_c()
+```
+
+# AR1
+
+```{r ar1}
+model <- cmdstan_model("models/ar.stan")
+model$print()
+```
+
+
+```{r fit}
+fit <- model$sample(data = list(n = n, y = data$y, clim = clim), 
+                    show_messages = FALSE)
+fit$summary("y_p") %>% 
+  mutate(ysd = 1:n()) %>% 
+  left_join(data, by = "ysd") %>% 
+  ggplot(aes(ysd)) +
+  geom_ribbon(aes(ymin = q5, ymax  = q95), alpha = .3) +
+  geom_line(aes(y = median)) +
+  geom_point(aes(y = y, col = clim)) +
+  theme_bw() +
+  scale_color_viridis_c()
+```
+
+```{r post}
+fit$summary(c("alpha", "beta", "sigma", "gamma"))
+```
+
+# GAM
+
+```{r gam}
+tibble(
+  ysd = 1:n,
+  y = data$y,
+  clim = clim,
+  y_p = gam(y ~ s(ysd, k = 5) + clim, data = data) %>% 
+    predict()
+) %>% 
+  ggplot(aes(ysd)) +
+  geom_line(aes(y = y_p)) +
+  geom_point(aes(y = y, col = clim)) +
+  theme_bw() +
+  scale_color_viridis_c()
+```
+
+```{r gamsum}
+gam(y ~ s(ysd, k = 5) + clim, data = data) %>% 
+  summary()
+```
+

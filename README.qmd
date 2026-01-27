@@ -30,6 +30,7 @@ Please explore them to understand how they work. However, the purpose of each fo
 -   `llima/` are analyses developed during the master thesis of Lucas Lima at F&S on the effect of fire and selective logging on forest height in Amazonia.
 -   `mrojat/` are analyses developed during the doctorate of Margaux Rojat at AMAP on invasive plan species in the Reunion island.
 -   `vbadouard/` are analyses developed during the doctorate of Vincyane Badouard at AMAP on canopy and undrestory species light niche in French Guiana.
+-   `erivers/` are analyses developed during the post doc of Erica Rivers at the CESAB in the BioForest project.
 -   `other/` are other unclassified analyses.
 
 Other files are:

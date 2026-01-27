@@ -1,0 +1,65 @@
+---
+title: "AR test true data 2"
+author: "Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+```{r set}
+#| include: false
+library(tidyverse)
+library(cmdstanr)
+library(bayesplot)
+```
+
+## Forest
+
+```{r forest}
+data <- read_tsv("~/Documents/bioforest/modelling/data/derived_data/data_rec.tsv", col_types = cols()) %>%
+  filter(variable == "agb") %>%
+  filter(site == "Paracou") %>% 
+  filter(plot == "7_1") %>% 
+  mutate(ysd = rel_year-2) %>% 
+  select(ysd, y)
+ggplot(data, aes(ysd, y)) +
+  geom_line() +
+  geom_point() +
+  theme_bw()
+```
+
+# Model
+
+```{r ar1}
+model <- cmdstan_model("models/test2.stan")
+model$print()
+```
+
+
+```{r fit}
+mdata <- filter(data, ysd != 1)
+fit <- model$sample(
+  data = list(N = nrow(mdata), 
+              Y = max(mdata$ysd),
+              y0 = filter(data, ysd == 1)$y,
+              y = mdata$y,
+              ysd = mdata$ysd
+              ),
+  parallel_chains = 4
+  )
+bind_cols(
+  fit$summary("y_p"),
+  data
+) %>% 
+  ggplot(aes(ysd)) +
+  geom_ribbon(aes(ymin = q5, ymax  = q95), alpha = .3) +
+  geom_line(aes(y = median)) +
+  geom_point(aes(y = y)) +
+  theme_bw()
+```
+
+```{r post}
+fit$summary(c("alpha", "beta", "sigma"))
+```
+

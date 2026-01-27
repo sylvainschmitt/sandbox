@@ -1,0 +1,19 @@
+---
+title: "eriver"
+author: Sylvain Schmitt
+date: today
+date-format: medium
+format: 
+  gfm:
+    toc: true
+    toc-depth: 1
+---
+
+Analyses developed during the post doc of Erica Rivers at the CESAB in the BioForest project.
+
+**eriver** includes:
+
+-   `ar.qmd` codes to test the potential use of autoregressive model in BioForest
+-   `ar_data.qmd` codes to test the potential use of autoregressive model in BioForest
+-   `ar_data_2.qmd` codes to test the potential use of autoregressive model in BioForest
+-   `test.qmd` codes to test the potential use of autoregressive model in BioForest
