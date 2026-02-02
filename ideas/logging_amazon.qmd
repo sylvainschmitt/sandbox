@@ -1,0 +1,38 @@
+---
+title: "Logging Amazon"
+author: "S. Schmitt & G. Derroire"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+bibliography: references.bib
+---
+
+The idea would be to develop a project on the **joint effect of selective logging and climate change on Amazonian forests dynamics**.
+
+## Hypotheses
+
+-   
+
+## Data
+
+-   IBAMA / G. Breda (lidar, log books, commercial inventories, and permanent plots on several large scale concessions)
+-   Contact with Amazonian Concessions
+-   TmFO Amazonian plots
+-   Guyafor
+-   ONF Guyane
+
+## Tools
+
+-   Bayesian modelling
+-   TROLL
+-   Canopy Construtor
+
+## Approaches
+
+-   Height and biomass modelling
+-   Impact of modelling, emission and absorption in time, carbon balance
+-   Practices effect (fine spatial scale modelling)
+-   Climate effect projection
+-   *Microclimate effect (e.g. MicroForest data)*

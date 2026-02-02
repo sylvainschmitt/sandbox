@@ -1,0 +1,18 @@
+---
+title: "Amazoni forest projections"
+author: "S. Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+bibliography: references.bib
+---
+
+The idea would be to develop a project on **...**
+
+Bulk ideas:
+
+-   Experiment based (CO2 FACE Manaus, H2O TEE Tapajos & Caixuana)
+-   Amazonian forest communities future dynamics projections
+-   Climate change: temperature (weak or with microlimate cf Rapahel), CO2 (Izabela), Water (Bianca, HydrAmazonia, TEE)
