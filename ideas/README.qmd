@@ -1,0 +1,17 @@
+---
+title: "ideas"
+author: Sylvain Schmitt
+date: today
+date-format: medium
+format: 
+  gfm:
+    toc: true
+    toc-depth: 1
+---
+
+Project or analyses ideas.
+
+**ideas** includes:
+
+-   `deom_clim.qmd` analyses exploring the links between tree demography and climate in Paracou, Mbaiki and SUAS
+
