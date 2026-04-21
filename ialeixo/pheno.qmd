@@ -1,0 +1,248 @@
+---
+title: "Phenology"
+author: "Sylvain Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+    toc_float: true
+---
+
+# Setup
+
+You only need the tidyverse package for table manipulation and figures preparation, cmdstanr, and bayesplot for Bayesian statistics.
+
+```{r libs}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(dplyr)
+library(cmdstanr)
+library(bayesplot)
+```
+
+# Weibull
+
+## Model
+
+Modelling the photosynthetic efficiency or capacity of a leaf as a function of its age (ageing) is often carried out using Weibull-type functions or exponential decline functions, as photosynthesis reaches its maximum (peak) shortly after leaf expansion and then declines during senescence.
+
+Photosynthetic capacity $P$ along time $t$ can be expressed as:
+
+$$
+P(t) \sim \mathcal N [ a \times \frac{t}{b}^{k-1} \times exp(\frac{t}{b}^{k}), \sigma]
+$$
+With:
+
+* $a$ : Scale parameter (related to the magnitude of efficiency)
+* $b$ : Time scale parameter (related to the timing of senescence)
+* $k$ : Shape parameter (determines the curvature/peaking)
+
+```{r}
+a <- 30
+b <- 300
+k <- 1.5
+weibull <- function(t, a, b, k) 
+  a*(t/b)^(k-1)*exp(-(t/b)^k)
+tmax <- b*((k-1)/k)^(1/k)
+pmax <- weibull(tmax, a, b, k)
+tibble(t = 0:365) %>% 
+  mutate(p = weibull(t, a, b, k)) %>% 
+  ggplot(aes(t, p)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Time [day]") + ylab("Photosynthetic capacity") +
+  geom_vline(xintercept = tmax, linetype = "dashed") +
+  geom_hline(yintercept = pmax, linetype = "dashed")
+```
+
+```{r}
+expand_grid(k = seq(1, 2, 0.1),
+            b = c(100, 200, 300),
+            a = c(10, 20, 30),
+            time = 0:365) %>% 
+  mutate(p = weibull(time, a = a, b = b, k = k)) %>% 
+  ggplot(aes(time, p, col = k, group = k)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Time [day]") + ylab("Photosynthetic capacity") +
+  facet_grid(a ~ b, labeller = label_both)
+```
+
+## Data
+
+```{r}
+n <- 100
+a <- 30
+b <- 300
+k <- 1.5
+sigma <- 2
+data <- tibble(age = sample(1:365, n)) %>% 
+  mutate(p = rnorm(n(), weibull(age, a, b, k), sigma))
+ggplot(data, aes(age, p)) +
+  geom_point() +
+  theme_bw()
+```
+
+## Fit
+
+```{r}
+model <- cmdstan_model("weibull.stan")
+model$print()
+```
+
+```{r}
+#| output: false
+mdata <- list(
+  N = nrow(data),
+  t = data$age,
+  p = data$p
+)
+fit <- model$sample(mdata, parallel_chains = 4)
+```
+
+```{r}
+fit$draws(c("lp__", "a", "b", "k")) %>% mcmc_trace() + theme_bw()
+```
+
+```{r}
+#| message: false
+#| warnign: false
+fit$draws(c("tmax", "pmax")) %>% mcmc_dens() + theme_bw()
+```
+
+```{r}
+data %>% 
+  mutate(pred = fit$summary("mu", median)$median) %>% 
+  ggplot(aes(pred, p)) +
+  geom_abline() +
+  geom_point() +
+  theme_bw()
+```
+
+```{r}
+data %>% 
+  mutate(pred = fit$summary("mu", median)$median) %>% 
+  ggplot(aes(age, p)) +
+  geom_line(aes(y = pred)) +
+  geom_point() +
+  theme_bw()
+```
+
+# Breakpoint
+
+## Model
+
+We could also use a breakpoint model (often referred to as the Broken Stick or Change Point Model) to estimate at what point (leaf age) the slope of photosynthetic efficiency changes radically.
+
+Basically, before the breakpoint $\tau$:
+
+$$
+P(t) \sim \mathcal N [ a_1 + b_1 \times t, \sigma]
+$$
+
+and after the breakpoint $\tau$:
+
+$$
+P(t) \sim \mathcal N [ a_2 + b_2 \times t, \sigma]
+$$
+
+With:
+
+* $b_1$ : the slope before breakpoint
+* $b$ : Time scale parameter (related to the timing of senescence)
+* $b_2$ : the slope after breakpoint
+
+```{r}
+a <- 0
+b1 <- 0.1
+tau <- 200
+b2 <- -0.05
+breakpoint <- function(t, tau, a, b1, b2){
+  if(t < tau) {
+    a + b1 * t
+  } else {
+    a + b1*tau + b2 * (t - tau)
+  }
+}
+pmax <- breakpoint(tau, tau, a, b1, b2)
+tibble(t = 0:365) %>% 
+  rowwise() %>% 
+  mutate(p = breakpoint(t, tau, a, b1, b2)) %>% 
+  ggplot(aes(t, p)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Time [day]") + ylab("Photosynthetic capacity") +
+  geom_vline(xintercept = tau, linetype = "dashed") +
+  geom_hline(yintercept = pmax, linetype = "dashed")
+```
+
+```{r}
+expand_grid(b1 = seq(0.1, 0.2, 0.05),
+            b2 = c(-0.1, -0.05, -0.025),
+            tau = c(100, 200, 300),
+            time = 0:365) %>% 
+  rowwise() %>% 
+  mutate(p = breakpoint(time, tau, a = 0, b1, b2)) %>% 
+  ggplot(aes(time, p, col = tau, group = tau)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Time [day]") + ylab("Photosynthetic capacity") +
+  facet_grid(b1 ~ b2, labeller = label_both)
+```
+
+## Data
+
+I will use the same data as before.
+
+```{r}
+ggplot(data, aes(age, p)) +
+  geom_point() +
+  theme_bw()
+```
+
+## Fit
+
+```{r}
+model <- cmdstan_model("breakpoint.stan")
+model$print()
+```
+
+```{r}
+#| output: false
+mdata <- list(
+  N = nrow(data),
+  t = data$age,
+  p = data$p
+)
+fit <- model$sample(mdata, parallel_chains = 4)
+```
+
+```{r}
+fit$draws(c("lp__", "a", "b1", "b2", "tau")) %>% mcmc_trace() + theme_bw()
+```
+
+```{r}
+#| message: false
+#| warnign: false
+fit$draws(c("tmax", "pmax")) %>% mcmc_dens() + theme_bw()
+```
+
+```{r}
+data %>% 
+  mutate(pred = fit$summary("mu", median)$median) %>% 
+  ggplot(aes(pred, p)) +
+  geom_abline() +
+  geom_point() +
+  theme_bw()
+```
+
+```{r}
+data %>% 
+  mutate(pred = fit$summary("mu", median)$median) %>% 
+  ggplot(aes(age, p)) +
+  geom_line(aes(y = pred)) +
+  geom_point() +
+  theme_bw()
+```

@@ -27,6 +27,7 @@ The idea would be to develop a project on the **joint effect of selective loggin
 
 -   Bayesian modelling
 -   TROLL
+-   LoggingLab
 -   Canopy Construtor
 
 ## Approaches

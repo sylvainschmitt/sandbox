@@ -1,0 +1,185 @@
+---
+title: "Paul"
+author: "Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+```{r set}
+#| message: false
+#| warning: false
+# devtools::install_github("sylvainschmitt/microclimr")
+library(tidyverse)
+library(microclimr)
+```
+
+## Data
+
+```{r all}
+#| message: false
+#| warning: false
+data <- read_csv("data/kuebini_56_sylvain.csv") %>% 
+  rename_all(tolower) %>% 
+  select(-1, -2, -5)
+data %>% 
+  gather(variable, value, -datetime) %>% 
+  ggplot(aes(datetime, value)) +
+  geom_rect(xmin = as_datetime("2020-11-06 00:00:00"), 
+            xmax = as_datetime("2020-12-31 00:00:00"), 
+            ymin = -Inf, ymax = Inf, alpha = 0.5, fill  = "#fff4e0") +
+  geom_line() +
+  facet_wrap(~ variable, scales = "free_y", nrow = 2) +
+  theme_bw() +
+  xlab("") + ylab("")
+```
+
+> Measurement are at every 20 minutes, I'll summarise them hourly for now.
+
+```{r week}
+#| message: false
+#| warning: false
+subdata <- data %>% 
+  group_by(datetime = floor_date(datetime, "1 hour")) %>%
+  summarise_all(mean) %>%
+  filter(year(datetime) == 2020,
+         month(datetime) == 12) %>% 
+  filter(day(datetime) %in% 16:22)
+subdata %>% 
+  gather(variable, value, -datetime) %>% 
+  ggplot(aes(datetime, value)) +
+  geom_line() +
+  facet_wrap(~ variable, scales = "free_y", nrow = 2) +
+  theme_bw() +
+  xlab("") + ylab("")
+```
+
+## Decomposition week
+
+```{r fc}
+cols <- c("firebrick", "darkgreen", "darkblue", "darkgrey")
+fc <- fft_tab(subdata$vpd_hobo, 24*6)
+p <- (fc %>% filter(frequency > 1/(24+1)) %>% filter(!frequency  %in% c((1:12)/24)) %>% arrange(desc(power)))$period[1:4]
+fc <- fc %>% 
+  mutate(amplitude = Re(coefficient),
+         phase = Im(coefficient)) %>% 
+  mutate(coeff_sup = ifelse(frequency > 1/(24+1), 0, 
+                            complex(real = amplitude, imaginary = phase))) %>% 
+  mutate(type = ifelse(frequency > 1/(24+1), "other", ">24")) %>% 
+  mutate(coeff_day = ifelse(frequency  %in% c((1:12)/24),
+                            complex(real = amplitude, imaginary = phase), 0)) %>% 
+  mutate(type = ifelse(frequency  %in% c((1:12)/24), "24", type)) %>% 
+  mutate(coeff_20 = ifelse(period  %in% p,
+                            complex(real = amplitude, imaginary = phase), 0)) %>%
+  mutate(type = ifelse(period  %in% p, "20.5", type))
+fc %>% 
+  filter(period != 0) %>% 
+  ggplot(aes(frequency, power, fill = type)) +
+  geom_col() +
+  theme_bw() +
+  scale_x_continuous(
+    breaks = c(1/(24), 1/(12), 1/(8), 1/(6), 1/(4)),
+    labels = c("1/24", "2/24", "3/24", "4/24", "6/24")
+  ) +
+  scale_fill_manual("", values = cols) +
+  theme(legend.position = c(0.8, 0.6)) + 
+  xlab("Frequency [hr]") + ylab("Power") +
+  theme(axis.text.x = element_text(angle = 45)) +
+  annotate("text", x=3/24, y=0.15, label = paste0("Mean:", round(fc$power[1],2)))
+```
+
+```{r projs}
+subdata$vpd_sup <- fft_reconstruct(fc$coeff_sup, fc$frequency[-1], 1:168)
+subdata$vpd_day <- fft_reconstruct(fc$coeff_day, fc$frequency[-1], 1:168)+fc$power[1]
+subdata$vpd_20 <- fft_reconstruct(fc$coeff_20, fc$frequency[-1], 1:168)+fc$power[1]
+g_sup <- ggplot(subdata, aes(datetime)) +
+  geom_line(aes(y = vpd_sup), col = cols[1]) +
+  theme_bw() +
+  xlab("") + ylab("") +
+  ylim(0, 0.8)
+g_day <- ggplot(subdata, aes(datetime)) +
+  geom_line(aes(y = vpd_day), col = cols[3]) +
+  theme_bw() +
+  xlab("") + ylab("") +
+  ylim(0, 0.8)
+g_20 <- ggplot(subdata, aes(datetime)) +
+  geom_line(aes(y = vpd_20), col = cols[2]) +
+  theme_bw() +
+  xlab("") + ylab("") +
+  ylim(-0.1, 0.8)
+cowplot::plot_grid(g_sup, g_day, g_20, nrow = 3)
+```
+
+## Decomposition all
+
+> Apparently most variation is at period 24-hr and its harmonics but also 5 days. Maybe a longer time window is necessary. The week example before might be peculiar thus.
+
+```{r fc_all}
+#| message: false
+fc <- data %>% 
+  group_by(datetime = floor_date(datetime, "1 hour")) %>%
+  summarise_all(mean) %>%
+  do(fft = fft_roll(
+    data = .,
+    t = 5*24,
+    index_col = "datetime",
+    temperature_col = "vpd_hobo",
+    window = "5 days",
+    step = "3 days"
+  )) %>%
+  unnest(fft) %>% 
+  mutate(season = ifelse(month(datetime) %in% 9:12, "fire season", "other season"))
+t <- fc %>% 
+  group_by(season, frequency, period) %>% 
+  summarise(sd = sd(power, na.rm = TRUE),
+            power = mean(power, na.rm = TRUE))
+t %>% 
+  filter(period != 0) %>% 
+  ggplot(aes(frequency, power)) +
+  geom_col(fill = "darkgrey") +
+  geom_linerange(aes(ymin = power-sd, ymax = power+sd)) +
+  theme_bw() +
+  xlab("Period [h]") +
+  ylab("Power") +
+  scale_x_continuous(
+    breaks = c(1/120, 1 / 24, 1 / 12, 1 / 8, 1 / 6, 1 / 3),
+    labels = c("5d", "24", "12", "8", "6", "3")
+  ) +
+  theme(legend.position.inside = c(0.8, 0.8)) +
+  facet_wrap(~ season, nrow = 2) +
+  geom_text(x = 3/24, y = 0.2,
+            aes(label = paste0("Mean: ", round(power,2), "±", round(sd,2))), 
+            data = filter(t, period ==0))
+```
+
+```{r}
+fc %>% 
+  filter(period %in% c(0, 5*24, 24, 24/2)) %>% 
+  ggplot(aes(datetime, power)) +
+  geom_rect(xmin = as_datetime("2020-11-06 00:00:00"), 
+            xmax = as_datetime("2020-12-31 00:00:00"), 
+            ymin = -Inf, ymax = Inf, alpha = 0.5, fill  = "#fff4e0") +
+  geom_line() +
+  theme_bw() +
+  xlab("") +
+  ylab("Power") +
+  theme(legend.position = "bottom") +
+  facet_wrap(~ period, nrow = 4, labeller = label_both)
+```
+
+> Interestingly, mean VPD and 24-hr amplitude are very linked. This might call also to an analyses on a longer time serie. 
+
+```{r}
+fc %>% 
+  filter(period %in% c(0,24)) %>% 
+  select(-coefficient, -frequency) %>% 
+  mutate(period = paste0("period_", period)) %>% 
+  pivot_wider(names_from = period, values_from = power) %>% 
+  ggplot(aes(period_0, period_24, col = season)) +
+  geom_point() +
+  theme_bw() +
+  xlab("Mean temperature") +
+  ylab("24-h amplitude")
+```
+

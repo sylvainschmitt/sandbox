@@ -1,0 +1,48 @@
+---
+title: "Vincyane"
+author: "S. Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+---
+
+```{r set}
+#| message: false
+#| warning: false
+library(tidyverse)
+```
+
+```{r gen}
+n <- 1000
+alpha <- 40
+beta <- 50
+sigma <- 0.1
+dbh <- runif(n, 1, 200)
+h <- (alpha * dbh/(beta+dbh))*exp(rnorm(n, sd = sigma))
+data <- tibble(dbh, h)
+ggplot(data, aes(dbh, h)) +
+  geom_point() +
+  stat_function(fun = function(x) alpha*x/(beta+x)) +
+  theme_bw()
+```
+
+```{r}
+data$error <- data$h - alpha * dbh/(beta+dbh)
+sde <- sd(data$error)
+ggplot(data, aes(error)) +
+  geom_density() +
+  theme_bw() +
+  geom_vline(xintercept = c(-sde, sde), linetype = "dashed")
+```
+
+```{r}
+dbh_new <- runif(n, 1, 200)
+h_new <- (alpha * dbh/(beta+dbh))*exp(rnorm(n, sd = sqrt(sde)))
+data_new <- tibble(dbh_new, h_new)
+ggplot(data, aes(dbh_new, h_new)) +
+  geom_point() +
+  stat_function(fun = function(x) alpha*x/(beta+x)) +
+  theme_bw()
+```

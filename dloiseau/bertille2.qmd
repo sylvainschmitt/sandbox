@@ -1,0 +1,506 @@
+---
+title: "Bertille 2"
+author: "S. Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+bibliography: references.bib
+execute:
+  echo: false
+---
+
+# Links
+
+-   Bruno's article: <https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/j.1365-2745.2011.01883.x>
+-   Ecology letters' article: <https://onlinelibrary.wiley.com/doi/full/10.1111/ele.14318>
+-   `cmdstanr` installation: <https://mc-stan.org/cmdstanr/articles/cmdstanr.html>
+-   `stan` programming: <https://mc-stan.org/>
+
+# Setup
+
+You only need the `tidyverse` package for table manipulation and figures preparation, `cmdstanr`, and `bayesplot` for Bayesian statistics.
+
+```{r libs}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(dplyr)
+library(cmdstanr)
+library(bayesplot)
+```
+
+# Data
+
+I'm reloading the data myself as I'm lacking files to exploit your code.
+
+```{r load}
+#| message: false
+#| warning: false
+data <- readxl::read_xlsx("data/Gx inventaire ALL propre Avril 2025 - IM.xlsx") %>% 
+  select(idArbre, "Genre espèce homogènes DB",
+         starts_with("C"), starts_with("Vivant")) %>%
+  select(-codeArbre, -codeDB, -"COMMENT recru", -"COMMENT mortalité") %>% 
+  rename(id = idArbre) %>% 
+  separate("Genre espèce homogènes DB", c("genus", "species")) %>% 
+  gather(year, value, -id, -genus, -species) %>% 
+  mutate(variable = ifelse(str_sub(year, 1, 1) == "C", "circ", "alive")) %>% 
+  mutate(year = gsub("C", "", year)) %>% 
+  mutate(year = gsub("Vivant", "", year)) %>% 
+  mutate(year = as.numeric(year)) %>% 
+  pivot_wider(names_from = variable, values_from = value) %>% 
+  mutate(circ = as.numeric(circ), alive = as.logical(alive)) %>% 
+  filter(alive) %>% 
+  mutate(dbh = circ/pi) %>% 
+  select(genus, species, id, year, dbh) %>% 
+  na.omit() %>% 
+  group_by(species) %>% 
+  mutate(dbh_max = quantile(dbh, .95))
+data %>% 
+  group_by(genus, species) %>% 
+  summarise(n = length(unique(id)),
+            y_min = min(year),
+            y_max = max(year),
+            dbh_min = min(dbh),
+            dbh_max = max(dbh)) %>% 
+  arrange(desc(n)) %>% 
+  head() %>% 
+  knitr::kable()
+```
+
+I will focus first on *Eperua falcata* trees.
+
+```{r}
+data_sub <- filter(data, genus == "Eperua", species == "falcata")
+ggplot(data_sub, aes(year, dbh, group =  id)) +
+  geom_line() +
+  theme_bw()
+```
+
+Then I'm looking only at recruited tress for a first test.
+
+```{r}
+inds <- filter(data_sub, dbh < 11) %>% 
+  group_by(genus, species, id) %>% 
+  summarise(y0 = min(year))
+data_sub_rec <- data_sub %>% 
+  filter(id %in% inds$id) %>% 
+  left_join(inds) %>% 
+  mutate(y = year - y0 + 1)
+ggplot(data_sub_rec, aes(y, dbh, col = as.character(id))) +
+  geom_line() +
+  theme_bw()
+```
+
+# Single tree
+
+Focusing on a signle recruited *Eperua flacata:*
+
+```{r}
+data_ind <- data_sub_rec %>% 
+  filter(id == 224946)
+ggplot(data_ind, aes(y, dbh, col = as.character(id))) +
+  geom_line() +
+  theme_bw()
+```
+
+$$
+DBH(t) \sim \mathcal N(DBH_0+\sum_0^tGmax\times exp(-\frac12[\frac{log(DBH/Dopt)}{K}]^2),\sigma)
+$$
+
+```{r }
+model <- cmdstan_model("models/sylvain_tree.stan")
+model$print()
+```
+
+```{r }
+#| eval: false
+mdata <- list(
+  N = nrow(data_ind[-1,]),
+  Y = max(data_ind$y),
+  dbh0 = data_ind$dbh[1],
+  dmax = unique(data_ind$dbh_max),
+  dbh = data_ind$dbh[-1],
+  year = data_ind$y[-1]
+)
+fit <- model$sample(data = mdata, parallel_chains = 4, output_dir = "chains/tree")
+```
+
+```{r}
+fit <- as_cmdstan_fit(list.files("chains/tree/", full.names = TRUE))
+```
+
+```{r }
+fit$draws(c("lp__", "gmax", "dopt", "k")) %>% 
+  mcmc_trace() +
+  theme_bw()
+```
+
+We summarise the parameter posteriors.
+
+```{r sylvain_tab}
+fit$summary(c("gmax", "dopt", "k", "sigma")) %>% 
+  knitr::kable()
+```
+
+We draw the posterior distributions of the parameters.
+
+```{r }
+fit$draws(c("gmax", "dopt", "k", "sigma")) %>% 
+  mcmc_dens() +
+  theme_bw()
+```
+
+```{r }
+bind_cols(data_ind[-1,], fit$summary('mu')) %>% 
+  ggplot(aes(median, dbh)) +
+  geom_abline() +
+  geom_segment(aes(x= q5, xend = q95)) +
+  geom_point() +
+  theme_bw() +
+  xlab("Predicted [mm/yr]") + ylab("Observed [mm/yr]")
+```
+
+```{r }
+bind_cols(data_ind[-1,], fit$summary('mu')) %>% 
+  ggplot(aes(y, dbh)) +
+  geom_line(aes(y = median)) +
+  geom_point() + 
+  theme_bw() +
+  xlab("Time since recruitment [yr]") + ylab("DBH [cm]")
+```
+
+# Single species - recruits
+
+```{r}
+data_sub_rec <- data_sub_rec %>% 
+  group_by(id) %>% 
+  filter(n() > 1) %>% 
+  ungroup() %>% 
+  mutate(indnum = as.numeric(as.factor(id)))
+data_sub_rec %>% 
+  ggplot(aes(y, dbh, group = id)) +
+  geom_line() +
+  theme_bw()
+```
+
+For each individual $i$:
+
+$$
+\begin{align}
+DBH(t,i) \sim \mathcal N(DBH_{0,i}+\sum_0^tGmax_i\times exp(-\frac12[\frac{log(DBH/Dopt_i)}{K_i}]^2),\sigma) \\
+Gmax_i \sim \mathcal N(Gmax, \sigma_G) \\
+Dopt_i \sim \mathcal N(Dopt, \sigma_D) \\
+K_i \sim \mathcal N(K, \sigma_K)
+\end{align}
+$$
+
+```{r}
+model <- cmdstan_model("models/sylvain_species.stan")
+model$print()
+```
+
+```{r}
+subdata <- filter(data_sub_rec, y != 1)
+mdata <- list(
+  N = nrow(subdata),
+  Y = max(subdata$y),
+  I = max(subdata$indnum),
+  dbh0 = filter(data_sub_rec, y == 1)$dbh,
+  dmax = unique(subdata$dbh_max),
+  dbh = subdata$dbh,
+  year = subdata$y,
+  ind = subdata$indnum
+)
+```
+
+```{r }
+#| eval: false
+fit <- model$sample(data = mdata, parallel_chains = 4, output_dir = "chains/recruit/")
+```
+
+```{r}
+fit <- as_cmdstan_fit(list.files("chains/recruit/", full.names = TRUE))
+```
+
+> Tree depth should be increased (time consuming).
+
+```{r}
+fit$draws(c("lp__", "gmax", "d", "k")) %>% 
+  mcmc_trace() +
+  theme_bw()
+```
+
+```{r}
+fit$draws(c("gmax", "d", "k", "sigma")) %>% 
+  mcmc_dens() +
+  theme_bw()
+```
+
+```{r}
+fit$draws(c("sigma", "sigma_g", "sigma_d", "sigma_k")) %>% 
+  mcmc_dens() +
+  theme_bw()
+```
+
+```{r}
+fit$draws(c("gmax_i")) %>% 
+  mcmc_intervals() +
+  theme_bw()
+```
+
+```{r}
+fit$draws(c("d_i")) %>% 
+  mcmc_intervals() +
+  theme_bw()
+```
+
+```{r}
+bind_cols(subdata, fit$summary('mu')) %>% 
+  ggplot(aes(median, dbh)) +
+  geom_abline() +
+  geom_segment(aes(x= q5, xend = q95)) +
+  geom_point() +
+  theme_bw() +
+  xlab("Predicted [mm/yr]") + ylab("Observed [mm/yr]")
+```
+
+```{r}
+bind_cols(subdata, fit$summary('mu')) %>% 
+  ggplot(aes(y, dbh, group = id)) +
+  geom_line(aes(y = median)) +
+  geom_point() + 
+  theme_bw() +
+  xlab("Time since recruitment [yr]") + ylab("DBH [cm]")
+```
+
+# Single species - all
+
+> ⚠️ Long!
+
+```{r}
+data_sub <- data_sub %>% 
+  group_by(id) %>% 
+  filter(n() > 1) %>% 
+  mutate(y0 = min(year)) %>% 
+  ungroup() %>% 
+  mutate(y = year - y0 + 1) %>% 
+  mutate(indnum = as.numeric(as.factor(id)))
+data_sub %>% 
+  ggplot(aes(y, dbh, group = id)) +
+  geom_line() +
+  theme_bw()
+```
+
+For each individual $i$:
+
+$$
+\begin{align}
+DBH(t,i) \sim \mathcal N(DBH_{0,i}+\sum_0^tGmax_i\times exp(-\frac12[\frac{log(DBH/Dopt_i)}{K_i}]^2),\sigma) \\
+Gmax_i \sim \mathcal N(Gmax, \sigma_G) \\
+Dopt_i \sim \mathcal N(Dopt, \sigma_D) \\
+K_i \sim \mathcal N(K, \sigma_K)
+\end{align}
+$$
+
+```{r}
+model <- cmdstan_model("models/sylvain_species.stan")
+model$print()
+```
+
+```{r}
+subdata <- filter(data_sub, y != 1)
+mdata <- list(
+  N = nrow(subdata),
+  Y = max(subdata$y),
+  I = max(subdata$indnum),
+  dbh0 = filter(data_sub, y == 1)$dbh,
+  dmax = unique(subdata$dbh_max),
+  dbh = subdata$dbh,
+  year = subdata$y,
+  ind = subdata$indnum
+)
+```
+
+```{r }
+#| eval: false
+fit <- model$sample(data = mdata, parallel_chains = 4, output_dir = "chains/species/")
+```
+
+```{r}
+fit <- as_cmdstan_fit(list.files("chains/species/", full.names = TRUE))
+```
+
+> Tree depth should be increased (time consuming).
+
+```{r}
+fit$draws(c("lp__", "gmax", "d", "k")) %>% 
+  mcmc_trace() +
+  theme_bw()
+```
+
+```{r}
+fit$draws(c("gmax", "d", "k", "sigma")) %>% 
+  mcmc_dens() +
+  theme_bw()
+```
+
+```{r}
+fit$draws(c("sigma", "sigma_g", "sigma_d", "sigma_k")) %>% 
+  mcmc_dens() +
+  theme_bw()
+```
+
+```{r}
+fit$draws(c("gmax_i")) %>% 
+  mcmc_intervals() +
+  theme_bw()
+```
+
+> I think the big gmax_i are possible errors.
+
+```{r}
+fit$draws(c("d_i")) %>% 
+  mcmc_intervals() +
+  theme_bw()
+```
+
+```{r}
+bind_cols(subdata, fit$summary('mu')) %>% 
+  ggplot(aes(median, dbh)) +
+  geom_abline() +
+  geom_segment(aes(x= q5, xend = q95)) +
+  geom_point() +
+  theme_bw() +
+  xlab("Predicted [mm/yr]") + ylab("Observed [mm/yr]")
+```
+
+```{r}
+bind_cols(subdata, fit$summary('mu')) %>% 
+  ggplot(aes(y, dbh, group = id)) +
+  geom_line(aes(y = median)) +
+  geom_point() + 
+  theme_bw() +
+  xlab("Time since recruitment [yr]") + ylab("DBH [cm]")
+```
+
+# Multi-species - recruits
+
+```{r}
+data_sub <- data %>% 
+  ungroup() %>% 
+  filter((genus == "Eperua" & species == "falcata") |
+           (genus == "Licania" & species == "alba"))
+inds <- filter(data_sub, dbh < 11) %>% 
+  group_by(genus, species, id) %>% 
+  summarise(y0 = min(year))
+data_sub_rec <- data_sub %>% 
+  filter(id %in% inds$id) %>% 
+  left_join(inds) %>% 
+  mutate(y = year - y0 + 1) %>% 
+  group_by(id) %>% 
+  filter(n() > 1) %>% 
+  ungroup() %>% 
+  mutate(indnum = as.numeric(as.factor(id))) %>% 
+  mutate(speciesnum = as.numeric(as.factor(paste(genus, species))))
+ggplot(data_sub_rec, aes(y, dbh, group = id, col = species)) +
+  geom_line() +
+  theme_bw()
+```
+
+For each individual $i$ of species $s$:
+
+$$
+\begin{align}
+DBH(t,i) \sim \mathcal N(DBH_{0,i}+\sum_0^tGmax_i\times exp(-\frac12[\frac{log(DBH/Dopt_i)}{K_i}]^2),\sigma) \\
+Gmax_i \sim \mathcal N(Gmax_s, \sigma_G) \\
+Dopt_i \sim \mathcal N(Dopt_s, \sigma_D) \\
+K_i \sim \mathcal N(K_s, \sigma_K)
+\end{align}
+$$
+
+> ⚠️ there is a strong hypothesis behind that variation of individual growth from one species to another is similar (community value of sigmaG).
+
+```{r}
+model <- cmdstan_model("models/sylvain_multispecies.stan")
+model$print()
+```
+
+```{r}
+subdata <- filter(data_sub_rec, y != 1)
+mdata <- list(
+  N = nrow(subdata),
+  Y = max(subdata$y),
+  I = max(subdata$indnum),
+  S = max(subdata$speciesnum),
+  dbh0 = filter(data_sub_rec, y == 1)$dbh,
+  dmax = (select(subdata, speciesnum, dbh_max) %>% unique() %>% arrange(speciesnum))$dbh_max,
+  dbh = subdata$dbh,
+  year = subdata$y,
+  ind = subdata$indnum,
+  indsp = (select(subdata, indnum, speciesnum) %>% unique() %>% arrange(indnum))$speciesnum
+)
+```
+
+```{r }
+#| eval: false
+fit <- model$sample(data = mdata, parallel_chains = 4, output_dir = "chains/two_species/")
+```
+
+```{r}
+fit <- as_cmdstan_fit(list.files("chains/two_species/", full.names = TRUE))
+```
+
+> Tree depth should be increased (time consuming).
+
+```{r}
+fit$draws(c("lp__", "gmax", "d", "k")) %>% 
+  mcmc_trace() +
+  theme_bw()
+```
+
+```{r}
+fit$draws(c("gmax", "d", "k", "sigma")) %>% 
+  mcmc_dens() +
+  theme_bw()
+```
+
+> *Licania* growth is small than *Eperua*.
+
+```{r}
+fit$draws(c("sigma", "sigma_g", "sigma_d", "sigma_k")) %>% 
+  mcmc_dens() +
+  theme_bw()
+```
+
+```{r}
+fit$draws(c("gmax_i")) %>% 
+  mcmc_intervals() +
+  theme_bw()
+```
+
+```{r}
+fit$draws(c("d_i")) %>% 
+  mcmc_intervals() +
+  theme_bw()
+```
+
+```{r}
+bind_cols(subdata, fit$summary('mu')) %>% 
+  ggplot(aes(median, dbh, col = paste(genus, species))) +
+  geom_abline() +
+  geom_segment(aes(x= q5, xend = q95)) +
+  geom_point() +
+  theme_bw() +
+  xlab("Predicted [mm/yr]") + ylab("Observed [mm/yr]")
+```
+
+```{r}
+bind_cols(subdata, fit$summary('mu')) %>% 
+  ggplot(aes(y, dbh, group = id, col = paste(genus, species))) +
+  geom_line(aes(y = median)) +
+  geom_point() + 
+  theme_bw() +
+  xlab("Time since recruitment [yr]") + ylab("DBH [cm]")
+```

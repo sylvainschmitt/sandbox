@@ -1,0 +1,73 @@
+---
+title: "BIEN"
+author: "Sylvain Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+@10.1111/2041-210x.70274
+
+```{r dl}
+#| eval: false
+library(tidyverse)
+library(BIEN)
+species <- BIEN_list_country(country = "French Guiana")
+write_tsv(species, "data/species.tsv")
+traits <- BIEN_trait_species(species = species$scrubbed_species_binomial)
+write_tsv(traits, "data/traits.tsv")
+```
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+read_tsv("data/traits.tsv") %>% 
+  rename(species = scrubbed_species_binomial, trait = trait_name) %>% 
+  filter(trait %in% c(
+    "leaf area per leaf dry mass",
+    "leaf nitrogen content per leaf dry mass",
+    "leaf phosphorus content per leaf dry mass",
+    "stem wood density"
+  )) %>% 
+  mutate(trait = recode(trait,
+    "leaf area per leaf dry mass" = "SLA",
+    "leaf nitrogen content per leaf dry mass" = "N",
+    "leaf phosphorus content per leaf dry mass" = "P",
+    "stem wood density" = "WD"
+  )) %>% 
+  group_by(species, trait) %>% 
+  summarise(value = median(as.numeric(trait_value), na.rm = TRUE)) %>% 
+  na.omit() %>% 
+  group_by(trait) %>% 
+  summarise(N= n()) %>% 
+  knitr::kable()
+```
+
+```{r}
+#| message: false
+#| warning: false
+read_tsv("data/traits.tsv") %>% 
+  rename(species = scrubbed_species_binomial, trait = trait_name) %>% 
+  filter(trait %in% c(
+    "leaf area per leaf dry mass",
+    "leaf nitrogen content per leaf dry mass",
+    "leaf phosphorus content per leaf dry mass",
+    "stem wood density"
+  )) %>% 
+  mutate(trait = recode(trait,
+    "leaf area per leaf dry mass" = "SLA",
+    "leaf nitrogen content per leaf dry mass" = "N",
+    "leaf phosphorus content per leaf dry mass" = "P",
+    "stem wood density" = "WD"
+  )) %>% 
+  group_by(species, trait) %>% 
+  summarise(value = median(as.numeric(trait_value), na.rm = TRUE)) %>% 
+  na.omit() %>% 
+  pivot_wider(names_from = "trait", values_from = "value") %>% 
+  na.omit() %>% 
+  ungroup() %>% 
+  summarise(N = n()) %>% 
+  knitr::kable()
+```

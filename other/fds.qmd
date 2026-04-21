@@ -1,0 +1,56 @@
+---
+title: "FDS - HE topics"
+author: "S. Schmitt"
+date: last-modified
+format: html
+---
+
+```{r}
+#| eval: false
+library(googlesheets4)
+link <- "https://docs.google.com/spreadsheets/d/1-tZWxzFI68i2ooYjxTJhGoFn_T1Ygv2L/edit?usp=sharing&ouid=106634730395841379883&rtpof=true&sd=true"
+read_sheet(link)
+```
+
+```{r}
+library(tidyverse)
+dat <- readxl::read_excel("HE_2026_2027_SS.xlsx") %>% 
+  rename_all(tolower) %>% 
+  rename_all(~ gsub(" ", "_", .)) %>% 
+  select(-"#",
+         -"type_d'action,_budget_en_m€_(nombre_de_projets)",
+         -"priorité_tsara_(soutien_possible)",
+         -commentaires) %>% 
+  rename(tp1 = "tp1_-_gestion_f_-_géraldine",
+         tp2 = "tp2_-_foresterie_-_marie-ange",
+         tp3 = "tp3_-_faune_-_seb",
+         tp4 = "tp4_-_degradation_-_isabelle",
+         tp5 = "tp5_-_restauration_-_marion",
+         tp6 = "tp6_-_climat_-_sylvain",
+         tp7 = "tp7_-_justice_-_arthur") %>% 
+  gather(tp, value, -topics, -cirad) %>% 
+  filter(value != "À évaluer") %>% 
+  group_by(topics) %>% 
+  arrange(topics) %>% 
+  filter(!all(value == "0 - HS")) %>% 
+  separate(value, c("note", "text"), convert = TRUE) %>% 
+  mutate(text = paste0(tp, ":", text)) %>% 
+  summarise(note = mean(note), tp = paste0(text, collapse = ", "), 
+            cirad = unique(cirad)) %>% 
+  mutate(cirad = ifelse(is.na(cirad), "", paste0(" - cirad:", cirad))) %>% 
+  mutate(comment = paste0(tp, cirad)) %>% 
+  select(-tp, -cirad) %>% 
+  arrange(desc(note))
+```
+
+```{r}
+g <- dat %>% 
+  ggplot(aes(reorder(topics, note), note, fill = note >= 1)) +
+  geom_col() +
+  coord_flip() +
+  theme_bw() +
+  xlab("") + ylab("") +
+  scale_fill_discrete(guide = "none")
+ggsave("fds.png", g, width = 15)
+```
+

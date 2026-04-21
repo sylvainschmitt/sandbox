@@ -31,7 +31,7 @@ library(bayesplot)
 
 # Data
 
-Data are tree hight and diameter from the TALLO database [@jucker2022] itself using Dos Santos data for Jamari. Longitude and latitude are in degrees, so 1 degree is about 110 km at the equator, and we use a buffer of 10km. We have a total of 974 individuals and 134 species.
+Data are tree hight and diameter from the TALLO database [@jucker2022] itself using Dos Santos data for Jamari. Longitude and latitude are in degrees, so 1 degree is about 110 km at the equator, and we use a buffer of 10km.
 
 ```{r data}
 #| message: false
@@ -41,18 +41,20 @@ lat <- -9.11
 buffer <- 10/110
 data <- read_csv("gustavo/tallo.csv") %>% 
   filter(longitude >= lon-buffer, longitude <= lon+buffer,
-          latitude >= lat-buffer, latitude <= lat+buffer) %>% 
-  mutate(species = paste(genus, species)) %>% 
-  select(tree_id, species, height_m, stem_diameter_cm)
+          latitude >= lat-buffer, latitude <= lat+buffer) %>%  
+  separate(species, c("genus", "species")) %>% 
+  select(genus, tree_id, height_m, stem_diameter_cm) %>% 
+  na.omit() %>% 
+  group_by(genus) %>% 
+  filter(n() > 10) %>% 
+  ungroup() %>% 
+  mutate(genusnum = as.numeric(as.factor(genus)))
 ggplot(data, aes(stem_diameter_cm, height_m)) +
-  geom_point(aes(col = species), alpha = 0.25) +
+  geom_point(alpha = 0.25) +
   theme_bw() +
-  geom_smooth(se = FALSE) +
-  scale_color_discrete(guide = "none") +
+  geom_smooth(method = "lm", formula = y ~ log(x), se = FALSE) +
   xlab("diameter (cm)") + ylab("height (m)") +
-  ggtitle(paste(nrow(data), "individuals"),
-          paste(unique(data$species) %>% length(),
-                "species"))
+  facet_wrap(~ genus)
 ```
 
 # Model
@@ -60,58 +62,72 @@ ggplot(data, aes(stem_diameter_cm, height_m)) +
 We model tree height $h$ in function of tree diameter $d$ as:
 
 $$
-h \sim logN( \frac{h_{max}\times d}{a + d} , \sigma)
+\begin{align}
+h_{g,u,i} \sim logN( log(\mu_g), \sigma) \\
+\mu_g = \frac{\alpha_g\times d_{g,u,i}}{\beta_g + d_{G,u,i}} \\
+\alpha_g \sim N(\alpha, \sigma_a) \\
+\beta_g \sim N(\beta, \sigma_b) \\
+u_u \sim N(0, \sigma_u)
+\end{align}
 $$
 
-with $h_{max}$ the maximum tree height and $a$.
+<!-- $$ -->
+<!-- \begin{align} -->
+<!-- h_{s,u,i} \sim logN( log(\mu_s) + u_u, \sigma) \\ -->
+<!-- \mu_s = \frac{\alpha_s\times d_{s,u,i}}{\beta_s + d_{s,u,i}} \\ -->
+<!-- u_u \sim N(0, \sigma_u) \\ -->
+<!-- \begin{bmatrix} \alpha_s \\ \beta_s \end{bmatrix} \sim MVN(\begin{bmatrix} \alpha \\ \beta \end{bmatrix}],  -->
+<!-- \begin{bmatrix} \sigma_a^2 & \rho \\ \rho & \sigma_s^2 \end{bmatrix}) \\ -->
+<!-- \end{align} -->
+<!-- $$ -->
+
+with $h_{max}$ ...
 
 # Example with `cmdstanr`
 
 ```{r stan_model}
 mdata <- list(
   N = nrow(data),
+  G = max(data$genusnum),
   h = data$height_m,
-  d = data$stem_diameter_cm
+  d = data$stem_diameter_cm,
+  genus = data$genusnum
 )
 model <- cmdstan_model("gustavo/gustavo.stan")
 model
 ```
 
 ```{r stan_fit}
-fit <- model$sample(data = mdata, parallel_chains = 4, 
-                    show_messages = FALSE, show_exceptions = FALSE)
+#| output: false
+fit <- model$sample(data = mdata, parallel_chains = 4)
+```
+
+```{r}
 fit
 ```
 
-```{r stan_pars}
-fit$draws(c("hmax", "a")) %>% 
+```{r }
+fit$draws(c("alpha_g")) %>% 
+  mcmc_intervals()
+```
+
+```{r}
+fit$draws(c("beta_g")) %>% 
+  mcmc_intervals()
+```
+
+```{r}
+fit$draws(c("alpha", "beta", "sigma_a", "sigma_b", "sigma")) %>% 
   mcmc_hist()
 ```
 
-```{r stan_proj}
-ggplot(data, aes(stem_diameter_cm, height_m)) +
-  geom_point(col = "lightgrey") +
-  stat_function(fun = function(x) 54.50*x/(33.90+x)) +
-  theme_bw() +
-  xlab("diameter (cm)") + ylab("height (m)") +
-  ggtitle(paste(nrow(data), "individuals"),
-          paste(unique(data$species) %>% length(),
-                "species"))
-```
-
-# Example with `brms` 
-
-```{r fit_brm}
-#| eval: false
-fit <- brm(bf(log(h) ~ log(hmax * d/ (a + d)), 
-              hmax ~ 1, a ~ 1,
-              nl = TRUE), 
-           prior = c(
-             prior(uniform(0, 100), lb = 10, nlpar = "hmax"),
-             prior(uniform(0, 100), lb = 0, nlpar = "a")
-             ),
-           data = mdata, chains = 4, cores = 4)
-fit
+```{r}
+data %>%
+  mutate(pred = fit$summary("mu")$median) %>% 
+  ggplot(aes(pred, height_m)) +
+  geom_abline() +
+  geom_point() +
+  theme_bw()
 ```
 
 # References

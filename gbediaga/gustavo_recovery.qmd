@@ -1,0 +1,195 @@
+---
+title: "Gustavo recovery"
+author: "S. Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+bibliography: references.bib
+---
+
+# Lecture
+
+-   About the model: @maurent2023
+-   `cmdstanr` installation: <https://mc-stan.org/cmdstanr/articles/cmdstanr.html>
+-   `stan` programming: <https://mc-stan.org/>
+
+# Setup
+
+You only need the `tidyverse` package for table manipulation and figures preparation, `cmdstanr` and `bayesplot` for Bayesian statistics.
+
+```{r libs}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(cmdstanr)
+library(bayesplot)
+```
+
+# Model
+
+We model $plot$ biomass $agb$ in function of time post disturbance $time$ as:
+
+$$
+\begin{align}
+agb \sim \mathcal N [ agb_{0,plot} + (agb_{\infty,plot} - agb_{0,plot}) \times (1 - e^{-\lambda_{plot} \times time}), \sigma ] \\
+agb_{\infty,plot} \sim \mathcal N (agb_{prelogging}, \sigma_{prelogging})\\
+agb_{0,plot} = agb_{\infty,plot} - agb_{\infty,plot} \times \alpha_{plot} \\
+\alpha_{plot} \sim \mathcal N(\alpha, \sigma_a) \\
+\lambda_{plot} \sim \mathcal N(\lambda, \sigma_l)
+\end{align}
+$$
+
+With:
+
+-   $agb_{\infty}$ : biomass at equilibirum
+-   $agb_{0}$ : biomass after disturbance (depending on $\alpha$ and $agb_{\infty}$)
+-   $\alpha$ : disturbance intensity (% biomass)
+-   $\lambda$ : recovery rate (time relative)
+
+```{r fig}
+#| message: false
+#| warning: false
+ltp <- function(time, alpha, agb_inf, lambda) {
+  agb_0 <- agb_inf * alpha
+  ltp <- 1 - exp(-lambda * time)
+  agb_0 + (agb_inf - agb_0) * (ltp)
+}
+data.frame(time = seq(0.1, 50, length.out = 100)) %>%
+  mutate(y_ltp = ltp(time, alpha = 0.5, agb_inf = 20, lambda = 0.05)) %>%
+  bind_rows(data.frame(time = 0, y_stp = 20, y_ltp = 20)) %>%
+  ggplot(aes(time)) +
+  geom_line(aes(y = y_ltp)) +
+  theme_bw() +
+  annotate("text",
+    x = 52, y = 19.5, label = "agb[infinity]",
+    col = "#9ea1d4", parse = TRUE, size = 5
+  ) +
+  annotate("text",
+    x = 20, y = 15, label = "lambda",
+    col = "#a8d2d1", parse = TRUE, size = 5
+  ) +
+  annotate("text",
+    x = -4, y = 15, label = "alpha",
+    col = "#fc8a8a", parse = TRUE, size = 5
+  ) +
+  theme(axis.title = element_blank()) +
+  geom_segment(aes(x = -2, y = 10, xend = -2, yend = 20),
+    arrow = arrow(length = unit(0.2, "cm")), col = "#fc8a8a"
+  ) +
+  geom_segment(aes(x = -2, y = 20, xend = -2, yend = 10),
+    arrow = arrow(length = unit(0.2, "cm")), col = "#fc8a8a"
+  ) +
+  theme(axis.title = element_blank()) +
+  geom_segment(aes(x = -5, y = 20, xend = 0, yend = 20))
+```
+
+# Data
+
+We are going to build fake data.
+
+```{r data}
+#| message: false
+#| warning: false
+n_plot <- 20
+agb_inf <- 300
+alpha <- 0.25
+prelog <- 3
+postlog <- 11
+sigma_plot <- 25
+sigma_year <- 5
+lambda <- 0.1
+data <- tibble(plot = paste0("PP", 1:n_plot)) %>% 
+  mutate(type = rep(c("undisturbed", "logged"), each = n_plot/2)) %>% 
+  mutate(agb_inf = rnorm(n_plot, agb_inf, sigma_plot)) %>% 
+  mutate(agb_0 = ifelse(type == "logged", agb_inf - alpha*agb_inf, agb_inf)) %>% 
+  mutate(time = list(1:(prelog+postlog)-prelog)) %>% 
+  unnest(time) %>% 
+  group_by(plot) %>% 
+  mutate(agb = ifelse(time > 0, 
+                      agb_0 + (agb_inf - agb_0) * (1 - exp(-lambda * time)),
+                      agb_inf)) %>% 
+  ungroup() %>% 
+  mutate(agb_obs = rnorm(n(), agb, sigma_year)) %>% 
+  mutate(plotnum = as.numeric(as.factor(plot)),
+         typenum = as.numeric(as.factor(type)))
+ggplot(data, aes(time, agb, col = type, group = plot)) +
+  geom_vline(xintercept = 0) +
+  geom_line() +
+  geom_point(aes(y = agb_obs)) +
+  theme_bw()
+```
+
+# Stan
+
+The model writing is a bit complicated:
+
+```{r}
+model <- cmdstan_model("gustavo/gustavo_recovery.stan")
+model$print()
+```
+
+We are going to focus on disturbed plots. The most complicated is to prepare the data. For that we must split prelogging and postlogging information:
+
+```{r}
+data <- filter(data, type == "logged")
+data_pre <- filter(data, time <= 0)
+data_rec <- filter(data, time > 0)
+mdata <- list(
+  N_rec = nrow(data_rec),
+  N_pre = nrow(data_pre),
+  P = max(data$plotnum),
+  agb = data_rec$agb_obs,
+  time = data_rec$time,
+  agb_pre =  data_pre$agb_obs,
+  plot =  data_rec$plotnum,
+  plot_pre = data_pre$plotnum
+)
+```
+
+```{r}
+#| output: false
+fit <- model$sample(data = mdata, parallel_chains = 4)
+```
+
+```{r}
+fit$draws("lp__") %>% mcmc_trace()
+```
+
+```{r}
+fit$draws("alpha_p") %>% mcmc_intervals() + theme_bw()
+```
+
+```{r}
+fit$draws("agb_inf_p") %>% mcmc_intervals() + theme_bw()
+```
+
+```{r}
+fit$draws("lambda_p") %>% mcmc_intervals() + theme_bw()
+```
+
+```{r}
+#| warning: false
+fit$draws(c("alpha", "lambda")) %>% mcmc_dens() + theme_bw()
+```
+
+```{r}
+data_rec %>% 
+  mutate(pred = fit$summary("mu")$median) %>% 
+  ggplot(aes(pred, agb_obs)) +
+  geom_abline() +
+  geom_point() +
+  theme_bw()
+```
+
+```{r}
+data_rec %>% 
+  mutate(pred = fit$summary("mu")$median) %>% 
+  ggplot(aes(time, pred, group = plot)) +
+  geom_point(aes(y = agb_obs)) +
+  geom_line() +
+  theme_bw()
+```
+
+# References

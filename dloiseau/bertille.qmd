@@ -1,0 +1,233 @@
+---
+title: "bertille"
+author: "S. Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+bibliography: references.bib
+---
+
+# Links
+
+-   Bruno's article: <https://besjournals.onlinelibrary.wiley.com/doi/full/10.1111/j.1365-2745.2011.01883.x>
+-   Ecology letters' article: <https://onlinelibrary.wiley.com/doi/full/10.1111/ele.14318>
+-   `cmdstanr` installation: <https://mc-stan.org/cmdstanr/articles/cmdstanr.html>
+-   `stan` programming: <https://mc-stan.org/>
+
+# Setup
+
+You only need the `tidyverse` package for table manipulation and figures preparation, `cmdstanr`, and `bayesplot` for Bayesian statistics.
+
+```{r libs}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(cmdstanr)
+library(bayesplot)
+```
+
+# Bruno's model
+
+We will make a first test generating data following Bruno's article model shape (see description in the paper):
+
+$$
+AGR \sim \mathcal{logN} ( log[ Gmax \times exp(- \frac 12 (\times \frac{log(DBH/Dopt)}{K})^2) ], \sigma)
+$$
+
+> Here we are using values fitted for *Dicorynia guianensis* in the paper.
+
+```{r bruno_data}
+n <- 100
+gmax <- 2.63 # mm / yr
+dopt <- 332.52 # mm
+k <- 0.87
+sigma <- .25 # mm / yr
+data <- tibble(dbh = runif(n, 10, 1000)) %>% 
+  mutate(agr = rlnorm(n, 
+                      meanlog = log(gmax*exp(-0.5*(log(dbh/dopt)/k)^2)), 
+                      sd = sigma))
+data %>% 
+  ggplot(aes(dbh, agr)) +
+  geom_point() +
+  stat_function(fun = ~ gmax*exp(-0.5*(log(./dopt)/k)^2)) +
+  theme_bw() +
+  xlab("DBH [mm]") + ylab("AGR [mm/yr]")
+```
+
+We write usually the model in a separate file in the stan language. Then we can first compile it as it a dreivative of C++ that needs first compilation before running the model with data.
+
+```{r bruno_model}
+model <- cmdstan_model("models/bruno.stan")
+model$print()
+```
+
+Then we prepare the data with names accordingly to the model data block definition. And we sample the model with our data running MCMC chains with the NUTS algorithm and dedicating a core per chain for speed (by default cmdstanr run 4 chains).
+
+```{r bruno_fit}
+#| output: false
+mdata <- list(
+  N = nrow(data),
+  dbh = data$dbh,
+  agr = data$agr
+)
+fit <- model$sample(data = mdata, parallel_chains = 4)
+```
+
+We can have a look to the chains with the draws of parameters of interest and using mcmc_trace. The chains have the expected caterpillar look. lp\_\_ is the log-likelihood.
+
+```{r bruno_trace}
+fit$draws(c("lp__", "gmax", "dopt", "k")) %>% 
+  mcmc_trace() +
+  theme_bw()
+```
+
+We can quickly summarize the parameters of interest. Mean, median, sd, mad, q5 and q95 represent statistics from the posterior distribution while rhat, ess_bulk and ess_tail are statistics that represent the quality of fit.
+
+```{r bruno_tab}
+fit$summary(c("gmax", "dopt", "k", "sigma")) %>% 
+  knitr::kable()
+```
+
+We can directly look at the density distributions of the posteriors draws with mcmc_dens.
+
+```{r bruno_dens}
+fit$draws(c("gmax", "dopt", "k", "sigma")) %>% 
+  mcmc_dens() +
+  theme_bw()
+```
+
+Using the variable mu we can look at predicted AGR versus observed ones.
+
+```{r bruno_pvo}
+bind_cols(data, fit$summary('mu')) %>% 
+  ggplot(aes(median, agr)) +
+  geom_abline() +
+  geom_segment(aes(x= q5, xend = q95)) +
+  geom_point() +
+  theme_bw() +
+  xlab("Predicted [mm/yr]") + ylab("Observed [mm/yr]")
+```
+
+And finally using the model draws we can predict back the mean trajectories (and the uncertainty too, this a quick and dirty code).
+
+```{r bruno_pred}
+data %>% 
+  ggplot(aes(dbh, agr)) +
+  geom_point() +
+  stat_function(fun = ~ fit$summary("gmax")$median *
+                  exp(-0.5*(log(./fit$summary("dopt")$median)
+                               /fit$summary("k")$median)^2)) +
+  theme_bw() +
+  xlab("DBH [mm]") + ylab("AGR [mm/yr]")
+```
+
+# Single tree
+
+Similarly we will test the more complex model developed in the Ecology Letter's article (see description in the paper).
+
+$$
+DBH(t) \sim \mathcal N(DBH_0+\sum_0^tGmax\times exp(-\frac12[\frac{log(DBH/Dopt)}{K}]^2),\sigma)
+$$
+
+> We will discuss the different parameters used to generate data here. One important point is the use of the for loop for the series.
+
+```{r sylvain_data}
+gmax <- 2.63 # mm / yr
+dopt <- 33.252 # cm
+k <- 0.87
+sigma <- 1 # cm
+y_max <- 40
+n <- 25
+dbh_0 <- 10
+dbh <- vector(length = y_max)
+dbh[1] <- dbh_0
+for(y in 2:y_max)
+  dbh[y] = dbh[y-1] + gmax*exp(-0.5*log((dbh[y-1]/(dopt))/k)^2)
+data <- tibble(years = sample(1:y_max, n)) %>% 
+  mutate(dbh = rnorm(n, dbh[years], sd = sigma)) %>% 
+  arrange(years)
+data %>% 
+  ggplot(aes(years, dbh)) +
+  geom_line(data = tibble(years = 1:y_max, dbh = dbh)) +
+  geom_point() + 
+  theme_bw() +
+  xlab("Time since recruitment [yr]") + ylab("DBH [cm]")
+```
+
+Similarly, we prepare the model in stan and compile it.
+
+```{r sylvain_model}
+model <- cmdstan_model("models/sylvain.stan")
+model$print()
+```
+
+We prepare the data and sample the posteriors.
+
+```{r sylvain_fit}
+#| output: false
+mdata <- list(
+  N = nrow(data),
+  Y = y_max,
+  dbh0 = dbh_0,
+  dbh = data$dbh,
+  year = data$years
+)
+fit <- model$sample(data = mdata, parallel_chains = 4)
+```
+
+We have a look at the chains traces.
+
+```{r sylvain_trace}
+fit$draws(c("lp__", "gmax", "dopt", "k")) %>% 
+  mcmc_trace() +
+  theme_bw()
+```
+
+We summarise the parameter posteriors.
+
+```{r sylvain_tab}
+fit$summary(c("gmax", "dopt", "k", "sigma")) %>% 
+  knitr::kable()
+```
+
+We draw the posterior distributions of the parameters.
+
+```{r sylvain_dens}
+fit$draws(c("gmax", "dopt", "k", "sigma")) %>% 
+  mcmc_dens() +
+  theme_bw()
+```
+
+We can compare predicted versus observed.
+
+```{r sylvain_pvo}
+bind_cols(data, fit$summary('mu')) %>% 
+  ggplot(aes(median, dbh)) +
+  geom_abline() +
+  geom_segment(aes(x= q5, xend = q95)) +
+  geom_point() +
+  theme_bw() +
+  xlab("Predicted [mm/yr]") + ylab("Observed [mm/yr]")
+```
+
+And finally we can put back the mean diameter trajectory prediction against observed points, the grey line here represent the true trajectory.
+
+```{r sylvain_pred}
+bind_cols(data, fit$summary('mu')) %>% 
+  ggplot(aes(years, dbh)) +
+  geom_line(data = tibble(years = 1:y_max, dbh = dbh), col = "lightgrey") +
+  geom_line(aes(y = median)) +
+  geom_point() + 
+  theme_bw() +
+  xlab("Time since recruitment [yr]") + ylab("DBH [cm]")
+```
+
+# Single species
+
+# Multi-species
+
+# Real data
+
+# References
