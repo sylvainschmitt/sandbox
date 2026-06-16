@@ -43,6 +43,9 @@ the purpose of each folder is listed below.
   at F&S on the effect of fire and selective logging on forest height in
   Amazonia.
 
+- `monitor/` are documents for the [PC
+  Monitor](https://www.pepr-forestt.fr/projets/pc-monitor) coordination.
+
 - `mrojat/` are analyses developed during the doctorate of Margaux Rojat
   at AMAP on invasive plan species in the Reunion island.
 

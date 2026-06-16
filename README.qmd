@@ -35,6 +35,8 @@ This is a sandbox repository for all the small tests I wanted to create without 
 
 - `llima/` are analyses developed during the master thesis of Lucas Lima at F&S on the effect of fire and selective logging on forest height in Amazonia.
 
+- `monitor/` are documents for the [PC Monitor](https://www.pepr-forestt.fr/projets/pc-monitor) coordination.
+
 - `mrojat/` are analyses developed during the doctorate of Margaux Rojat at AMAP on invasive plan species in the Reunion island.
 
 - `nrusso/` are analyses developed during the post doc of Nicholas Russo at Harvard on modelling the effect of defaunation in Central Africa on forest dynamics with TROLL.

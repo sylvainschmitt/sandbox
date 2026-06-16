@@ -1,0 +1,17 @@
+---
+title: "PC Monitor"
+author: Sylvain Schmitt
+date: today
+date-format: medium
+format: 
+  gfm:
+    toc: true
+    toc-depth: 1
+---
+
+Documents for the [PC Monitor](https://www.pepr-forestt.fr/projets/pc-monitor) coordination.
+
+**monitor** includes:
+
+-   `dmp.qmd` information on the data management plan
+-   `dmp_graph.qmd` graphic on the data management plan
