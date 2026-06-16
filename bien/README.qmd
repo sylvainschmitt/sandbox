@@ -1,5 +1,5 @@
 ---
-title: "ialeixo"
+title: "BIEN"
 author: Sylvain Schmitt
 date: today
 date-format: medium
@@ -9,10 +9,8 @@ format:
     toc-depth: 1
 ---
 
-Analyses developed during the post doc of Izabella Aleixo at INPA on modelling the effect of FACE Amazonia on forest dynamics with TROLL.
+Explore the access to the BIEN database (reference to be added).
 
-**ialeixo** includes:
+**bien** includes:
 
--   `izablea.qmd` codes to manipulate rcontroll with version 4
-
-Contact: izabela.faleixo@gmail.com
+-   `test.qmd` codes to make a quick test of available data in French Guiana for TROLL

@@ -1,6 +1,6 @@
 # sanbdox
 Sylvain Schmitt
-Dec 1, 2025
+Jun 16, 2026
 
 This is a sandbox repository for all the small tests I wanted to create
 without their own repository. There are especially small codes developed
@@ -19,25 +19,44 @@ the purpose of each folder is listed below.
 
 **sanbdox** includes:
 
+- `bien/` explore the access to the BIEN database (reference to be
+  added).
+
 - `bruis/` are analyses developed during the post doc of Bianca Ruis at
   the CRBE on modelling water table depth dynamics in TROLL.
-- `nrusso/` are analyses developed during the post doc of Nicholas Russo
-  at Harvard on modelling the effect of defaunation in Central Africa on
-  forest dynamics with TROLL.
-- `gbreda/` are analyses developed during the doctorate of Gustavo Breda
-  at F&S on Brazilian forest concessions Carbon balance.
+
+- `dloiseau/` are analyses developed the postdoctorate of Bertille
+  Loiseau on tree growth in relation to soil water content.
+
+- `erivers/` are analyses developed during the post doc of Erica Rivers
+  at the CESAB in the BioForest project.
+
+- `gbediaga/` are analyses developed during the doctorate of Gustavo
+  Bediaga at F&S on Brazilian forest concessions Carbon balance.
+
 - `ialeixo/` are analyses developed during the post doc of Izabella
   Aleixo at INPA on modelling the effect of FACE Amazonia on forest
   dynamics with TROLL.
-- `lferrante/` are analyses developed during the master thesis of Lucas
-  Ferrante Breda at F&S on the effect of fire and selective logging on
-  forest height in Amazonia.
+
+- `llima/` are analyses developed during the master thesis of Lucas Lima
+  at F&S on the effect of fire and selective logging on forest height in
+  Amazonia.
+
 - `mrojat/` are analyses developed during the doctorate of Margaux Rojat
   at AMAP on invasive plan species in the Reunion island.
+
+- `nrusso/` are analyses developed during the post doc of Nicholas Russo
+  at Harvard on modelling the effect of defaunation in Central Africa on
+  forest dynamics with TROLL.
+
+- `prouanet/` are analyses developed during the doctorate of Paul
+  Rouanet at AMAP on VPD microclimate modelling.
+
 - `vbadouard/` are analyses developed during the doctorate of Vincyane
   Badouard at AMAP on canopy and undrestory species light niche in
   French Guiana.
-- `other/` are other unclassified analyses.
+
+- `z_other/` are other unclassified analyses.
 
 Other files are:
 

@@ -1,5 +1,5 @@
 ---
-title: "vbadouard"
+title: "Paul Rouanet"
 author: Sylvain Schmitt
 date: today
 date-format: medium
@@ -9,13 +9,10 @@ format:
     toc-depth: 1
 ---
 
-Analyses developed during the doctorate of Vincyane Badouard at AMAP on canopy and undrestory species light niche in French Guiana.
+Analyses developed during the doctorate of Paul Rouanet at AMAP on VPD microclimate modelling.
 
-**vbadouard** includes:
+**prouanet** includes:
 
--   `residuals.qmd` analyses on Binomial pseudo-residuals
--   `vincyane.qmd` analyses on background data
--   `vincyane2.qmd` analyses on parameters 3-D space
--   `vincyane3.qmd` analyses on rational behind the model
+-   `paul.qmd` analyses on VPD microclimate modelling
 
-Contact: vincyane.badouard@gmail.com; geraldine.derroire@cirad.fr
+Contact: paul.rouanet@ird.fr; thomas.ibanez@ird.fr

@@ -1,0 +1,125 @@
+---
+title: "rcontroll masting"
+author: "Sylvain Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+---
+
+# Installation
+
+Getting Theo's version. Please restart R first.
+
+```{r}
+#| eval: false
+remove.packages("rcontroll")
+devtools::install_github("Lycaon-bzz/rcontroll", ref = "masting", force = TRUE)
+```
+
+# Loading
+
+Check the version always.
+
+```{r}
+library(tidyverse)
+library(rcontroll)
+TROLL.version()
+```
+
+# Getting species data
+
+```{r}
+data <- read.table(file = "EM2.txt", header = T)
+data %>% 
+  summary()
+```
+
+# Getting spin-up
+
+```{r}
+spinup <- readRDS("start.RDS")
+spinup
+```
+
+```{r}
+spinup@inputs$global %>% 
+  tail()
+```
+
+```{r}
+rcontroll::autoplot(spinup)
+```
+
+# Preparing inputs
+
+```{r}
+sims <- as.character(c(1:2))
+sims
+```
+
+
+```{r}
+pars <- data.frame()
+for (sim in sims) {
+  z <- generate_parameters(
+    cols = 250,
+    rows = 250,
+    length_dcell = 25,
+    nbiter = 12*10, 
+    iterperyear = 12,
+    torus = 1,
+    Cseedrain = 0,
+    CustomPhenology = 0,
+    MonthlySeedUpdate = 0,
+    SeedBoosting = 0,
+    NONRANDOM = 2) %>%
+    mutate(simulation = sim)
+  pars <- bind_rows(pars, z)
+}
+summary(pars)
+```
+
+# Preparing folder
+
+```{r}
+#| eval: false
+if(file.exists("temptest"))
+  unlink("temptest", recursive = TRUE)
+dir.create("temptest")
+```
+
+# Running stack
+
+```{r}
+#| eval: false
+sim_stack <- rcontroll::stack(
+  name = "10years",
+  simulations = sims,
+  global = pars,
+  species = data,
+  climate = TROLLv3_climatedaytime12,
+  daily = TROLLv3_daytimevar,
+  verbose = TRUE,
+  forest = get_forest(spinup),
+  cores = 2,
+  path = "temptest",
+  load = FALSE
+)
+```
+
+```{r}
+list.files("temptest", recursive = TRUE)
+```
+
+# Loading back
+
+```{r}
+sim_stack <- rcontroll::load_stack(name = "10years", path = "temptest/10years/")
+sim_stack
+```
+
+```{r}
+rcontroll::autoplot(sim_stack)
+```
+

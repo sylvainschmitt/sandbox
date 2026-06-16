@@ -1,12 +1,13 @@
-# gbediaga
+# dloiseau
 Sylvain Schmitt
-Dec 1, 2025
+Jun 16, 2026
 
-Analyses developed during the doctorate of Gustavo Bediaga at F&S on
-Brazilian forest concessions Carbon balance.
+Analyses developed during the postdoctorate of Bertille Loiseau on tree
+growth in relation to soil water content.
 
-**gbediaga** includes:
+**dloiseau** includes:
 
-- `gustavo` codes for a tree height-diameter allometry
+- `bertille.qmd` codes for individual tree growth modelling 1
+- `bertille2.qmd` codes for individual tree growth modelling 2
 
-Contact: gbediaga@gmail.com; geraldine.derroire@cirad.fr
+Contact: bertille.loiseau@ird.fr; isabelle.maréchaux@inrae.fr

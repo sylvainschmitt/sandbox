@@ -1,2 +1,5 @@
-*.html
+*
+!README.md
+!README.qmd
+!test.qmd
 

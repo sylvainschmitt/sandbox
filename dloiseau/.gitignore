@@ -1,2 +1,6 @@
-*.html
-gustavo/gustavo
+*
+!README.md
+!README.qmd
+!bertille.qmd
+!bertille2.qmd
+!models/*.stan
