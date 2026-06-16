@@ -36,7 +36,8 @@ the purpose of each folder is listed below.
 
 - `ialeixo/` are analyses developed during the post doc of Izabella
   Aleixo at INPA on modelling the effect of FACE Amazonia on forest
-  dynamics with TROLL.
+  dynamics with TROLL and analysing photosynthetic leaf efficiency with
+  leaf age.
 
 - `llima/` are analyses developed during the master thesis of Lucas Lima
   at F&S on the effect of fire and selective logging on forest height in

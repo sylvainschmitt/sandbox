@@ -1,2 +1,7 @@
-*.html
-
+*
+!README.md
+!README.qmd
+!izabela.qmd
+!pheno.qmd
+!pheno3.qmd
+!models

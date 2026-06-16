@@ -1,0 +1,377 @@
+---
+title: "Phenology"
+author: "Sylvain Schmitt"
+date: last-modified
+format: 
+  html:
+    embed-resources: true
+    toc: true
+    toc_float: true
+    cache: true
+---
+
+# Setup
+
+You only need the `̀tidyverse` package for table manipulation and figures preparation, `cmdstanr`, & `bayesplot` for Bayesian statistics, and `cowplot` for figures.
+
+```{r libs}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(dplyr)
+library(cmdstanr)
+library(bayesplot)
+library(cowplot)
+```
+
+# Data
+
+Available data include:
+
+- photosynthetic efficiency measurement $phi$ (`phi2_0`)
+- photosynthetically active radiation $par$ (`Light.Intensity..PAR.`)
+- vapour pressure deficit $vpd$ (`VPD`)
+- species $sp$ (`Especie_final`)
+- ... (*among others*)
+
+```{r data}
+#| message: false
+#| warning: false
+#| fig-cap: "Caption."
+data <- readxl::read_xlsx("dados_PAM_summary.xlsx")
+g_par <- data %>% 
+  ggplot(aes(Light.Intensity..PAR., phi2_0)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y ~ x) +
+  theme_bw() +
+  scale_y_log10()
+g_vpd <- data %>% 
+  ggplot(aes(VPD, phi2_0)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  theme_bw()
+g_age <- data %>% 
+  ggplot(aes(n_days, phi2_0, col = Especie_final)) +
+  geom_point() +
+  geom_smooth(se = FALSE) +
+  theme_bw() +
+  ylim(0, 1) +
+  scale_color_discrete(guide = "none")
+plot_grid(g_par, g_vpd, g_age, align = "hv")
+```
+
+# Model data
+
+We prepare data for modelling adding a new column `speciesnum` with species as numerical indexes to the data, and adding to new variables $N$ the number of observations and $S$ the number of species.
+
+```{r model_data}
+data <- data %>%
+  mutate(speciesnum = as.numeric(as.factor(Especie_final))) 
+mdata <- list(
+  N = nrow(data),
+  S = max(data$speciesnum),
+  phi = data$phi2_0,
+  age = data$n_days,
+  vpd = data$VPD,
+  par = data$Light.Intensity..PAR.,
+  sp = data$speciesnum,
+  N_p = max(data$n_days)
+)
+```
+
+# Model $par$
+
+We used an exponential decay to represent the $par$ effect:
+
+$$phi \sim \mathcal N (a_p \times exp(-b_p\times par), \sigma) $$
+
+$a_p$ is controlling the intercept efficiency of $phi$ when par is null, while $b_p$ is controlling the slope of the exponential decay:
+
+```{r par_fig}
+expand_grid(par = 1:2500, a = 0.6, b_p = exp(seq(-7, 0))) %>% 
+  mutate(phi = a+exp(-b_p*par)) %>% 
+  ggplot(aes(par, phi, col = b_p, group = b_p)) +
+  geom_line() +
+  theme_bw() +
+  scale_color_viridis_c()
+```
+
+```{r par_fit}
+#| eval: false
+model <- cmdstan_model("models/par.stan")
+list.files("chains/par/", full.names = TRUE) %>% unlink()
+fit <- model$sample(mdata, parallel_chains = 4, output_dir = "chains/par/")
+```
+
+Constraining parameters in the right space, the model converged well:
+
+```{r par_fit_res}
+fit <- as_cmdstan_fit(list.files("chains/par/", full.names = TRUE))
+fit$draws(c("lp__", "ap", "bp_log", "sigma")) %>% 
+  mcmc_trace() + theme_bw()
+```
+
+$par$ alone is explaining already 90% of the observed variation (Bayesian R-squared):
+
+```{r par_pvo}
+rmsep <- fit$summary("rmsep")
+brsq <- fit$summary("brsq")
+data %>% 
+  mutate(pred_par = fit$summary("mu_par", median)$median) %>% 
+  ggplot(aes(pred_par, phi2_0)) +
+  geom_abline() +
+  geom_point() +
+  theme_bw() +
+  annotate("text", 0.2, 0.7, 
+           label = paste0("RMSEP=", round(rmsep$median, 3))) +
+  annotate("text", 0.2, 0.65, 
+           label = paste0("R2=", round(brsq$median, 2)))
+```
+
+The projection seems good but high values of par might have underestimated phi:
+
+```{r par_proj}
+fit$summary("mu_par") %>% 
+  mutate(par = mdata$par) %>% 
+  mutate(phi_obs = mdata$phi) %>% 
+  ggplot(aes(par, median)) +
+  geom_line(aes(y = q5), linetype = "dashed") +
+  geom_line(aes(y = q95), linetype = "dashed") +
+  geom_line() +
+  geom_point(aes(y = phi_obs)) +
+  theme_bw()
+```
+
+# Model $vpd$
+
+We used a simple linear effect to represent the $vpd$ effect as we did not have much expectation and preliminary results indicated weak to no effect.
+
+$$phi \sim \mathcal N (a_v+b_v\times vpd, \sigma) $$
+
+```{r vpd_fit}
+#| eval: false
+model <- cmdstan_model("models/vpd.stan")
+list.files("chains/vpd/", full.names = TRUE) %>% unlink()
+fit <- model$sample(mdata, parallel_chains = 4, output_dir = "chains/vpd/")
+```
+
+The model converged well:
+
+```{r vpd_fit_res}
+fit <- as_cmdstan_fit(list.files("chains/vpd/", full.names = TRUE))
+fit$draws(c("lp__", "av", "bv", "sigma")) %>% 
+  mcmc_trace() + theme_bw()
+```
+
+$vpd$ alone is explaining only 15% of the observed variation (Bayesian R-squared):
+
+```{r vpd_pvo}
+rmsep <- fit$summary("rmsep")
+brsq <- fit$summary("brsq")
+data %>% 
+  mutate(pred_par = fit$summary("mu_vpd", median)$median) %>% 
+  ggplot(aes(pred_par, phi2_0)) +
+  geom_abline() +
+  geom_point() +
+  theme_bw() +
+  annotate("text", 0.3, 0.7, 
+           label = paste0("RMSEP=", round(rmsep$median, 3))) +
+  annotate("text", 0.3, 0.65, 
+           label = paste0("R2=", round(brsq$median, 2)))
+```
+
+The projection seems bad, in accordance with the fact that most variation is explained by par that might covary with vpd and create the negative relation:
+
+```{r vpd_proj}
+fit$summary("mu_vpd") %>% 
+  mutate(vpd = mdata$vpd) %>% 
+  mutate(phi_obs = mdata$phi) %>% 
+  ggplot(aes(vpd, median)) +
+  geom_line(aes(y = q5), linetype = "dashed") +
+  geom_line(aes(y = q95), linetype = "dashed") +
+  geom_line() +
+  geom_point(aes(y = phi_obs)) +
+  theme_bw()
+```
+
+# Model $age$
+
+Modelling the photosynthetic efficiency as a function of its $age$ is often carried out using Weibull-type functions or exponential decline functions, as photosynthesis reaches its maximum (peak) shortly after leaf expansion and then declines during senescence as:
+
+$$phi \sim \mathcal N [ a_s \times \frac{age}{b_s}^{k_s-1} \times exp(\frac{age}{b_s}^{k_s}), \sigma]$$
+
+With:
+
+- $a$ : Scale parameter for each species (related to the magnitude of efficiency)
+- $b$ : Time scale parameter for each species (related to the timing of senescence)
+- $k$ : Shape parameter for each species (determines the curvature/peaking)
+
+From this parameters we can derive to parameters of interest which are the peak timing and intensity $age_{opt,s}$ and $phi_{max,s}$ as:
+
+- $age_{opt,s} = b_s \times(\frac{k_s-1}{k_s})^{\frac 1k_s}$
+- $phi_{max,s} = a_s \times \frac{age_{opt,s}}{b_s}^{k_s-1}*exp(-\frac{age_{opt,s}}{b_s}^{k_s})$
+
+```{r age_fig}
+weibull <- function(t, a, b, k) 
+  a*(t/b)^(k-1)*exp(-(t/b)^k)
+expand_grid(k = seq(1, 2, 0.1),
+            b = c(100, 200, 300),
+            a = c(10, 20, 30),
+            time = 0:365) %>% 
+  mutate(p = weibull(time, a = a, b = b, k = k)) %>% 
+  ggplot(aes(time, p, col = k, group = k)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Time [day]") + ylab("Photosynthetic capacity") +
+  facet_grid(a ~ b, labeller = label_both) +
+  scale_color_viridis_c()
+```
+
+```{r age_fit}
+#| eval: false
+model <- cmdstan_model("models/age.stan")
+list.files("chains/age/", full.names = TRUE) %>% unlink()
+fit <- model$sample(mdata, parallel_chains = 4, output_dir = "chains/age/")
+```
+
+The model converged ok:
+
+```{r age_fit_res}
+fit <- as_cmdstan_fit(list.files("chains/age/", full.names = TRUE))
+fit$draws(c("lp__", "a", "b", "k", "sigma")) %>% 
+  mcmc_trace() + theme_bw()
+```
+
+$age$ alone is explaining only 35% of the observed variation (Bayesian R-squared):
+
+```{r age_pvo}
+rmsep <- fit$summary("rmsep")
+brsq <- fit$summary("brsq")
+data %>% 
+  mutate(pred_par = fit$summary("mu_age", median)$median) %>% 
+  ggplot(aes(pred_par, phi2_0)) +
+  geom_abline() +
+  geom_point() +
+  theme_bw() +
+  annotate("text", 0.3, 0.7, 
+           label = paste0("RMSEP=", round(rmsep$median, 3))) +
+  annotate("text", 0.3, 0.65, 
+           label = paste0("R2=", round(brsq$median, 2)))
+```
+
+The projection seems ok:
+
+```{r age_proj}
+fit$summary("mu_age") %>% 
+  mutate(age = mdata$age) %>% 
+  mutate(phi_obs = mdata$phi) %>% 
+  mutate(species = mdata$sp) %>% 
+  ggplot(aes(age, median)) +
+  geom_line(aes(y = q5), linetype = "dashed") +
+  geom_line(aes(y = q95), linetype = "dashed") +
+  geom_line() +
+  geom_point(aes(y = phi_obs)) +
+  theme_bw() +
+  facet_wrap(~ species)
+```
+
+# Full model
+
+Now we are assembling the three in a single model:
+
+$$phi \sim \mathcal N [ a_p \times exp(-b_p\times par) + b_v\times vpd + a_s \times \frac{age}{b_s}^{k_s-1} \times exp(\frac{age}{b_s}^{k_s}), \sigma]$$
+
+```{r full_fit}
+#| eval: false
+model <- cmdstan_model("models/full.stan")
+list.files("chains/full/", full.names = TRUE) %>% unlink()
+fit <- model$sample(mdata, parallel_chains = 4, output_dir = "chains/full/")
+```
+
+The model converged well:
+
+```{r full_fit_res}
+fit <- as_cmdstan_fit(list.files("chains/full/", full.names = TRUE))
+fit$draws(c("lp__", "ap", "bp_log", "bv", "a", "b", "k", "sigma")) %>% 
+  mcmc_trace() + theme_bw()
+```
+
+The full model is explaining only 94% of the observed variation (Bayesian R-squared):
+
+```{r full_pvo}
+rmsep <- fit$summary("rmsep")
+brsq <- fit$summary("brsq")
+data %>% 
+  mutate(pred_par = fit$summary("mu", median)$median) %>% 
+  ggplot(aes(pred_par, phi2_0)) +
+  geom_abline() +
+  geom_point() +
+  theme_bw() +
+  annotate("text", 0.3, 0.7, 
+           label = paste0("RMSEP=", round(rmsep$median, 3))) +
+  annotate("text", 0.3, 0.65, 
+           label = paste0("R2=", round(brsq$median, 2)))
+```
+
+Species projections are good, we can then look at the response parameters tmax and pmaw corresponding to timing and value of maximal efficiency:
+
+```{r full_proj}
+t <- fit$summary("y_sp") %>% 
+  separate(variable, c("x1", "x2", "sp", "age")) %>% 
+  mutate(age = as.numeric(age)*10)
+t %>% 
+  na.omit() %>% 
+  ggplot(aes(age, median)) +
+  geom_line(aes(y = q5), linetype = "dashed") +
+  geom_line(aes(y = q95), linetype = "dashed") +
+  geom_line() +
+  theme_bw() +
+  facet_wrap(~ sp)
+```
+
+The maximum timing varies from  123 to 574 days:
+
+```{r full_tmax}
+fit$draws("tmax_s") %>% 
+  mcmc_areas_ridges() +
+  theme_bw() +
+  scale_x_sqrt()
+```
+
+The maximum values varies from 0.086 to 0.200:
+
+```{r full_pmax}
+fit$draws("pmax_s") %>% 
+  mcmc_areas_ridges() +
+  theme_bw()
+```
+
+We can make a biplot of the two:
+
+```{r full_pmax_tmax}
+id <- data %>% 
+  select(Especie_final, speciesnum) %>% 
+  unique()
+fit$summary(c("tmax_s", "pmax_s")) %>% 
+  separate(variable, c("parameter", "s", "speciesnum"), convert = TRUE) %>% 
+  select(-s) %>% 
+  left_join(id) %>% 
+  gather(metric, value, -parameter, -speciesnum, -Especie_final) %>% 
+  mutate(parameter_metric = paste0(parameter, "_", metric)) %>% 
+  select(-parameter, -metric) %>% 
+  pivot_wider(names_from = parameter_metric, values_from = value) %>% 
+  ggplot(aes(tmax_median, pmax_median, col = Especie_final)) +
+  geom_point() +
+  geom_segment(aes(x = tmax_median - tmax_sd, xend = tmax_median + tmax_sd), alpha = .5) +
+  geom_segment(aes(y = pmax_median - pmax_sd, yend = pmax_median + pmax_sd),
+    alpha = .5
+  ) +
+  theme_bw() +
+  scale_x_sqrt() +
+  xlab("Peak timing [Tmax, days]") +
+  ylab("Peak intensity [Pmax]") +
+  scale_color_discrete("") +
+  theme(legend.text = element_text(face = "italic"))
+```
+
+
